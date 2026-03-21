@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>教师管理面板 - FPGA实验教学系统</title>
+    <link rel="stylesheet" href="css/common.css">
+    <link rel="stylesheet" href="css/teacher-dashboard.css">
+</head>
+<body>
+    <!-- 顶部导航栏 -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <span class="logo">👨‍🏫</span>
+                <span>FPGA 实验教学系统</span>
+            </div>
+            <div class="nav-user">
+                <span id="userName">教师</span>
+                <button id="logoutBtn" class="btn btn-small">退出登录</button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="app-container">
+        <!-- 左侧边栏 -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="user-avatar">👨‍🏫</div>
+                <div class="user-info">
+                    <div class="user-name" id="sidebarUserName">教师</div>
+                    <div class="user-role">教师账户</div>
+                </div>
+            </div>
+            
+            <nav class="sidebar-nav">
+                <a href="#dashboard" class="nav-item active" data-module="dashboard">
+                    <span class="nav-icon">🏠</span>
+                    <span class="nav-text">控制台主页</span>
+                </a>
+                <a href="#devices" class="nav-item" data-module="devices">
+                    <span class="nav-icon">📱</span>
+                    <span class="nav-text">设备监控大厅</span>
+                    <span class="nav-badge" id="deviceBadge" style="display: none;">0</span>
+                </a>
+                <a href="#experiments" class="nav-item" data-module="experiments">
+                    <span class="nav-icon">🧪</span>
+                    <span class="nav-text">实验发布中心</span>
+                </a>
+                <a href="#classes" class="nav-item" data-module="classes">
+                    <span class="nav-icon">👥</span>
+                    <span class="nav-text">班级学情管理</span>
+                </a>
+            </nav>
+            
+            <div class="sidebar-footer">
+                <div class="connection-status">
+                    <span class="status-dot" id="wsStatusDot"></span>
+                    <span id="wsStatusText">连接中...</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- 主内容区 -->
+        <main class="main-content">
+            <!-- 控制台主页 -->
+            <section id="dashboard-module" class="content-module">
+                <div class="module-header">
+                    <h1>控制台主页</h1>
+                    <p class="module-desc">欢迎回来！这里是系统概览和快速统计。</p>
+                </div>
+                
+                <div class="stats-cards">
+                    <div class="stat-card">
+                        <div class="stat-icon">👥</div>
+                        <div class="stat-info">
+                            <div class="stat-value" id="statTotalStudents">0</div>
+                            <div class="stat-label">学生总数</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">📱</div>
+                        <div class="stat-info">
+                            <div class="stat-value" id="statTotalDevices">0</div>
+                            <div class="stat-label">设备总数</div>
+                        </div>
+                    </div>
+                    <div class="stat-card stat-card-success">
+                        <div class="stat-icon">✅</div>
+                        <div class="stat-info">
+                            <div class="stat-value" id="statOnlineDevices">0</div>
+                            <div class="stat-label">在线设备</div>
+                        </div>
+                    </div>
+                    <div class="stat-card stat-card-warning">
+                        <div class="stat-icon">🧪</div>
+                        <div class="stat-info">
+                            <div class="stat-value" id="statExperiments">0</div>
+                            <div class="stat-label">实验数量</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="dashboard-grid">
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>📊 设备概览</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="device-overview" id="deviceOverview">
+                                <div class="overview-loading">加载中...</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>📈 今日活动</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="activity-stats" id="todayActivity">
+                                <div class="activity-item">
+                                    <span class="activity-value" id="todaySubmissions">0</span>
+                                    <span class="activity-label">今日提交</span>
+                                </div>
+                                <div class="activity-item">
+                                    <span class="activity-value" id="todayDevices">0</span>
+                                    <span class="activity-label">活跃设备</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="card" style="margin-top: 20px;">
+                    <div class="card-header">
+                        <h3>🧪 实验列表</h3>
+                        <button class="btn btn-small" id="refreshExperimentsBtn">🔄 刷新</button>
+                    </div>
+                    <div class="card-body">
+                        <div class="experiment-table-wrapper">
+                            <table class="data-table" id="experimentTable">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>实验名称</th>
+                                        <th>难度</th>
+                                        <th>时长(分钟)</th>
+                                        <th>类别</th>
+                                        <th>引脚配置</th>
+                                        <th>创建时间</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="experimentTableBody">
+                                    <tr>
+                                        <td colspan="7" class="table-loading">加载中...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 设备监控大厅 -->
+            <section id="devices-module" class="content-module" style="display: none;">
+                <div class="module-header">
+                    <h1>设备监控大厅</h1>
+                    <p class="module-desc">实时监控所有 FPGA 设备的在线状态和采集状态。</p>
+                </div>
+                
+                <div class="device-monitor-filters">
+                    <div class="filter-group">
+                        <label>状态筛选：</label>
+                        <select id="deviceStatusFilter">
+                            <option value="all">全部</option>
+                            <option value="online">在线</option>
+                            <option value="offline">离线</option>
+                            <option value="capturing">采集中</option>
+                            <option value="faulty">故障</option>
+                        </select>
+                    </div>
+                    <div class="device-count">
+                        共 <span id="deviceCount">0</span> 台设备
+                    </div>
+                </div>
+                
+                <div class="device-grid" id="deviceGrid">
+                    <!-- 设备卡片动态生成 -->
+                    <div class="device-empty">
+                        <span class="empty-icon">📱</span>
+                        <p>暂无设备连接</p>
+                        <p class="empty-hint">等待 FPGA 设备通过 TCP 连接...</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 实验发布中心 -->
+            <section id="experiments-module" class="content-module" style="display: none;">
+                <div class="module-header">
+                    <h1>实验发布中心</h1>
+                    <p class="module-desc">创建和管理 FPGA 实验，配置采样参数和触发条件。</p>
+                    <button class="btn btn-primary" id="createExperimentBtn">
+                        <span>➕</span> 创建新实验
+                    </button>
+                </div>
+                
+                <!-- 实验创建表单 -->
+                <div class="experiment-builder" id="experimentBuilder" style="display: none;">
+                    <div class="card">
+                        <div class="card-header">
+                            <h3 id="experimentFormTitle">创建新实验</h3>
+                        </div>
+                        <div class="card-body">
+                            <form id="experimentForm" class="experiment-form">
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label for="expCode">实验代码 <span class="required">*</span></label>
+                                        <input type="text" id="expCode" name="experiment_code" placeholder="例如: EXP001" required>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="expName">实验名称 <span class="required">*</span></label>
+                                        <input type="text" id="expName" name="experiment_name" placeholder="例如: 流水灯实验" required>
+                                    </div>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label for="expDescription">实验描述</label>
+                                    <textarea id="expDescription" name="description" rows="3" placeholder="描述这个实验的目的和步骤..."></textarea>
+                                </div>
+                                
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label for="expCategory">实验类别</label>
+                                        <select id="expCategory" name="category">
+                                            <option value="basic">基础实验</option>
+                                            <option value="advanced">高级实验</option>
+                                            <option value="project">项目实验</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="expDifficulty">难度等级</label>
+                                        <select id="expDifficulty" name="difficulty_level">
+                                            <option value="easy">简单</option>
+                                            <option value="medium" selected>中等</option>
+                                            <option value="hard">困难</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="expDuration">预计时长(分钟)</label>
+                                        <input type="number" id="expDuration" name="estimated_duration" value="60" min="15" max="240">
+                                    </div>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label for="sampleLength">采集深度/包数量 <span class="required">*</span></label>
+                                    <input type="number" id="sampleLength" name="sample_length" value="32" min="1" max="65536" placeholder="例如：32">
+                                    <small class="form-hint">每个引脚采集的数据包数量 (1-65536)</small>
+                                </div>
+
+                                <div class="form-group">
+                                    <label>采样时钟来源 <span class="required">*</span></label>
+                                    <select name="sample_clock_source" required>
+                                        <option value="external" selected>external - 外部时钟</option>
+                                        <option value="internal">internal - 内部时钟</option>
+                                    </select>
+                                </div>
+
+                                <div class="form-group">
+                                    <label>采集目标引脚配置 <span class="required">*</span></label>
+                                    <div class="pins-selector" id="pinsSelector">
+
+                                        <div class="pins-category">
+                                            <div class="pins-category-header">
+                                                <span class="pins-category-title">💡 LED (指示灯) 32个</span>
+                                                <button type="button" class="btn btn-small" onclick="selectAllPins('target_pins_led')">全选</button>
+                                                <button type="button" class="btn btn-small" onclick="deselectAllPins('target_pins_led')">全不选</button>
+                                            </div>
+                                            <div class="pins-options" id="target_pins_led">
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="LED0"> LED0</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="LED1"> LED1</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="LED2"> LED2</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="LED3"> LED3</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="LED4"> LED4</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="LED5"> LED5</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="LED6"> LED6</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="LED7"> LED7</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="LED8"> LED8</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="LED9"> LED9</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="LED10"> LED10</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="LED11"> LED11</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="LED12"> LED12</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="LED13"> LED13</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="LED14"> LED14</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="LED15"> LED15</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="LED16"> LED16</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="LED17"> LED17</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="LED18"> LED18</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="LED19"> LED19</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="LED20"> LED20</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="LED21"> LED21</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="LED22"> LED22</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="LED23"> LED23</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="LED24"> LED24</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="LED25"> LED25</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="LED26"> LED26</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="LED27"> LED27</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="LED28"> LED28</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="LED29"> LED29</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="LED30"> LED30</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="LED31"> LED31</label>
+                                            </div>
+                                        </div>
+
+                                        <div class="pins-category">
+                                            <div class="pins-category-header">
+                                                <span class="pins-category-title">🔌 SW (拨码开关) 32个</span>
+                                                <button type="button" class="btn btn-small" onclick="selectAllPins('target_pins_sw')">全选</button>
+                                                <button type="button" class="btn btn-small" onclick="deselectAllPins('target_pins_sw')">全不选</button>
+                                            </div>
+                                            <div class="pins-options" id="target_pins_sw">
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="SW0"> SW0</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="SW1"> SW1</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="SW2"> SW2</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="SW3"> SW3</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="SW4"> SW4</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="SW5"> SW5</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="SW6"> SW6</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="SW7"> SW7</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="SW8"> SW8</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="SW9"> SW9</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="SW10"> SW10</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="SW11"> SW11</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="SW12"> SW12</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="SW13"> SW13</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="SW14"> SW14</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="SW15"> SW15</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="SW16"> SW16</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="SW17"> SW17</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="SW18"> SW18</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="SW19"> SW19</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="SW20"> SW20</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="SW21"> SW21</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="SW22"> SW22</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="SW23"> SW23</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="SW24"> SW24</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="SW25"> SW25</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="SW26"> SW26</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="SW27"> SW27</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="SW28"> SW28</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="SW29"> SW29</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="SW30"> SW30</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="SW31"> SW31</label>
+                                            </div>
+                                        </div>
+
+                                        <div class="pins-category">
+                                            <div class="pins-category-header">
+                                                <span class="pins-category-title">🔘 独立按键</span>
+                                                <button type="button" class="btn btn-small" onclick="selectAllPins('target_pins_btn')">全选</button>
+                                                <button type="button" class="btn btn-small" onclick="deselectAllPins('target_pins_btn')">全不选</button>
+                                            </div>
+                                            <div class="pins-options" id="target_pins_btn">
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="BTN0"> BTN0</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="BTN1"> BTN1</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="BTN2"> BTN2</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="BTN3"> BTN3</label>
+                                            </div>
+                                        </div>
+
+                                        <div class="pins-category">
+                                            <div class="pins-category-header">
+                                                <span class="pins-category-title">🔘 A7 按键</span>
+                                                <button type="button" class="btn btn-small" onclick="selectAllPins('target_pins_a7')">全选</button>
+                                                <button type="button" class="btn btn-small" onclick="deselectAllPins('target_pins_a7')">全不选</button>
+                                            </div>
+                                            <div class="pins-options" id="target_pins_a7">
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="A7_BTN0"> A7_BTN0</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="A7_BTN1"> A7_BTN1</label>
+                                            </div>
+                                        </div>
+
+                                        <div class="pins-category">
+                                            <div class="pins-category-header">
+                                                <span class="pins-category-title">🔊 蜂鸣器</span>
+                                                <button type="button" class="btn btn-small" onclick="selectAllPins('target_pins_buzzer')">全选</button>
+                                                <button type="button" class="btn btn-small" onclick="deselectAllPins('target_pins_buzzer')">全不选</button>
+                                            </div>
+                                            <div class="pins-options" id="target_pins_buzzer">
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="BUZZER"> BUZZER</label>
+                                            </div>
+                                        </div>
+
+                                        <div class="pins-category">
+                                            <div class="pins-category-header">
+                                                <span class="pins-category-title">7段数码管段选</span>
+                                                <button type="button" class="btn btn-small" onclick="selectAllPins('target_pins_seg')">全选</button>
+                                                <button type="button" class="btn btn-small" onclick="deselectAllPins('target_pins_seg')">全不选</button>
+                                            </div>
+                                            <div class="pins-options" id="target_pins_seg">
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="SEG_A"> SEG_A</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="SEG_B"> SEG_B</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="SEG_C"> SEG_C</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="SEG_D"> SEG_D</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="SEG_E"> SEG_E</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="SEG_F"> SEG_F</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="SEG_G"> SEG_G</label>
+                                            </div>
+                                        </div>
+
+                                        <div class="pins-category">
+                                            <div class="pins-category-header">
+                                                <span class="pins-category-title">7段数码管位选</span>
+                                                <button type="button" class="btn btn-small" onclick="selectAllPins('target_pins_dig')">全选</button>
+                                                <button type="button" class="btn btn-small" onclick="deselectAllPins('target_pins_dig')">全不选</button>
+                                            </div>
+                                            <div class="pins-options" id="target_pins_dig">
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="DIG0"> DIG0</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="DIG1"> DIG1</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="DIG2"> DIG2</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="DIG3"> DIG3</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="DIG4"> DIG4</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="DIG5"> DIG5</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="DIG6"> DIG6</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="DIG7"> DIG7</label>
+                                            </div>
+                                        </div>
+
+                                        <div class="pins-category">
+                                            <div class="pins-category-header">
+                                                <span class="pins-category-title">矩阵按键列</span>
+                                                <button type="button" class="btn btn-small" onclick="selectAllPins('target_pins_col')">全选</button>
+                                                <button type="button" class="btn btn-small" onclick="deselectAllPins('target_pins_col')">全不选</button>
+                                            </div>
+                                            <div class="pins-options" id="target_pins_col">
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="COL0"> COL0</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="COL1"> COL1</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="COL2"> COL2</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="COL3"> COL3</label>
+                                            </div>
+                                        </div>
+
+                                        <div class="pins-category">
+                                            <div class="pins-category-header">
+                                                <span class="pins-category-title">矩阵按键行</span>
+                                                <button type="button" class="btn btn-small" onclick="selectAllPins('target_pins_row')">全选</button>
+                                                <button type="button" class="btn btn-small" onclick="deselectAllPins('target_pins_row')">全不选</button>
+                                            </div>
+                                            <div class="pins-options" id="target_pins_row">
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="ROW0"> ROW0</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="ROW1"> ROW1</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="ROW2"> ROW2</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="ROW3"> ROW3</label>
+                                            </div>
+                                        </div>
+
+                                    </div>
+                                    <small class="form-hint">选择需要采集的引脚，至少选择 1 个</small>
+                                </div>
+
+                                <script>
+                                function selectAllPins(groupId) {
+                                    const container = document.getElementById(groupId);
+                                    if (container) {
+                                        container.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = true);
+                                    }
+                                }
+                                function deselectAllPins(groupId) {
+                                    const container = document.getElementById(groupId);
+                                    if (container) {
+                                        container.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
+                                    }
+                                }
+                                </script>
+
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label class="checkbox-label">
+                                            <input type="checkbox" name="is_public" value="true">
+                                            <span>发布为公开实验（其他教师可见）</span>
+                                        </label>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="checkbox-label">
+                                            <input type="checkbox" name="is_classic" value="true">
+                                            <span>标记为经典实验</span>
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <div class="form-actions">
+                                    <button type="submit" class="btn btn-primary">创建实验</button>
+                                    <button type="button" class="btn btn-secondary" id="cancelExperimentBtn">取消</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 实验列表 -->
+                <div class="experiments-list" id="experimentsList">
+                    <div class="experiments-loading">加载中...</div>
+                </div>
+            </section>
+
+            <!-- 班级学情管理 -->
+            <section id="classes-module" class="content-module" style="display: none;">
+                <div class="module-header">
+                    <h1>班级学情管理</h1>
+                    <p class="module-desc">管理班级、学生和设备分配，查看学习进度。</p>
+                    <button class="btn btn-primary" id="createClassBtn">
+                        <span>➕</span> 创建班级
+                    </button>
+                </div>
+                
+                <div class="classes-grid" id="classesGrid">
+                    <div class="class-empty">
+                        <span class="empty-icon">👥</span>
+                        <p>暂无班级</p>
+                        <p class="empty-hint">点击上方按钮创建第一个班级</p>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- 模态框 -->
+    <div id="modalOverlay" class="modal-overlay" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modalTitle">标题</h3>
+                <button class="modal-close" id="modalClose">&times;</button>
+            </div>
+            <div class="modal-body" id="modalBody">
+                内容
+            </div>
+        </div>
+    </div>
+
+    <script src="js/auth.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="js/teacher.js"></script>
+</body>
+</html>

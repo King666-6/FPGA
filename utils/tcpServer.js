@@ -1,0 +1,488 @@
+const net = require('net');
+const DataParser = require('./dataParser');
+const DataRecord = require('../models/DataRecord');
+const db = require('../utils/database');
+const { broadcastDeviceData, broadcastToTeachers, getSocketByDeviceId } = require('../utils/socketManager');
+const { getPinId, validatePinIds, getPinName, getPinType, PIN_TYPE } = require('./pinConfig');
+
+const pool = () => db.getPool();
+
+const deviceSocketMap = new Map();
+const socketDeviceMap = new Map();
+
+function transposeWaveforms(waveforms) {
+    if (!waveforms || waveforms.length === 0) {
+        return [];
+    }
+    
+    const packetCount = waveforms.length;
+    const pinCount = waveforms[0].length;
+    
+    const transposed = [];
+    for (let pinIndex = 0; pinIndex < pinCount; pinIndex++) {
+        const pinWaveform = [];
+        for (let packetIndex = 0; packetIndex < packetCount; packetIndex++) {
+            pinWaveform.push(waveforms[packetIndex][pinIndex]);
+        }
+        transposed.push(pinWaveform);
+    }
+    
+    return transposed;
+}
+
+const FRAME_START = Buffer.from([0xFF, 0xFE]);
+const DEFAULT_CLOCK_SELECT = 0x0001;
+const DEFAULT_DEVICE_NUMBER = 0xCCCCCCCC;
+const RESERVED_BYTES = Buffer.from([0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA]);
+
+let globalDeviceIdCounter = 1;
+
+function buildCommandBuffer(options = {}) {
+    const {
+        clockSelect = DEFAULT_CLOCK_SELECT,
+        deviceNumber = DEFAULT_DEVICE_NUMBER,
+        triggerCondition = 0x0000,
+        packetCount = 2,
+        requestedPins = []
+    } = options;
+
+    const buffer = Buffer.alloc(24);
+    let offset = 0;
+
+    buffer.writeUInt16BE(0xFFFE, offset);
+    offset += 2;
+
+    buffer.writeUInt16BE(clockSelect, offset);
+    offset += 2;
+
+    buffer.writeUInt32BE(deviceNumber, offset);
+    offset += 4;
+
+    buffer.writeUInt16BE(triggerCondition, offset);
+    offset += 2;
+
+    buffer.writeUInt16BE(packetCount, offset);
+    offset += 2;
+
+    RESERVED_BYTES.copy(buffer, offset);
+    offset += 8;
+
+    let sum = 0;
+    for (let i = 0; i < 20; i++) {
+        sum += buffer[i];
+    }
+    buffer.writeUInt32BE(sum & 0xFFFFFFFF, offset);
+
+    return buffer;
+}
+
+function parseWaveformData(waveforms, pinMapping) {
+    if (!waveforms || !pinMapping || pinMapping.length === 0) {
+        return {
+            leds: [],
+            switches: [],
+            digits: [],
+            buttons: [],
+            buzzer: null,
+            adc: [],
+            raw: waveforms
+        };
+    }
+
+    const result = {
+        leds: [],
+        switches: [],
+        digits: [],
+        buttons: [],
+        buzzer: null,
+        adc: [],
+        raw: waveforms
+    };
+
+    for (let i = 0; i < pinMapping.length; i++) {
+        const pinId = pinMapping[i];
+        const pinName = getPinName(pinId);
+        const pinType = getPinType(pinId);
+
+        if (waveforms[i] && waveforms[i].length > 0) {
+            const latestValue = waveforms[i][waveforms[i].length - 1];
+
+            switch (pinType) {
+                case PIN_TYPE.LED:
+                    result.leds.push({ pin: pinName, id: pinId, value: latestValue });
+                    break;
+                case PIN_TYPE.SWITCH:
+                    result.switches.push({ pin: pinName, id: pinId, value: latestValue });
+                    break;
+                case PIN_TYPE.DIGIT_SEGMENT:
+                case PIN_TYPE.DIGIT_SELECT:
+                    result.digits.push({ pin: pinName, id: pinId, value: latestValue });
+                    break;
+                case PIN_TYPE.BUTTON_INDEPENDENT:
+                case PIN_TYPE.BUTTON_MATRIX_COL:
+                case PIN_TYPE.BUTTON_MATRIX_ROW:
+                case PIN_TYPE.BUTTON_A7:
+                    result.buttons.push({ pin: pinName, id: pinId, value: latestValue });
+                    break;
+                case PIN_TYPE.BUZZER:
+                    result.buzzer = { pin: pinName, id: pinId, value: latestValue };
+                    break;
+            }
+        }
+    }
+
+    return result;
+}
+
+class TCPServer {
+    constructor(port) {
+        this.port = port;
+        this.server = null;
+        this.clientParsers = new Map();
+        this.deviceSocketMap = new Map();
+        this.deviceContexts = new Map();
+    }
+
+    start() {
+        this.server = net.createServer((socket) => {
+            const clientId = `${socket.remoteAddress}:${socket.remotePort}`;
+            console.log(`[TCP] Client connected: ${clientId}`);
+
+            socket.deviceId = `FPGA_AUTO_${globalDeviceIdCounter++}`;
+
+            const parser = new DataParser(socket.deviceId);
+            this.clientParsers.set(socket, parser);
+
+            parser.on('full-cycle-ready', async (data) => {
+                console.log(`[TCP] [${data.deviceId}] Full data cycle received`);
+
+                const deviceId = socket.deviceId || data.deviceId || clientId;
+                const deviceContext = this.deviceContexts.get(deviceId);
+                let pinMappingIds = deviceContext?.pinMapping || [];
+                const isAutoGenerated = pinMappingIds.length === 0;
+                
+                if (isAutoGenerated) {
+                    const waveformPinCount = data.waveforms[0]?.length || 0;
+                    pinMappingIds = [];
+                    for (let i = 0; i < Math.min(waveformPinCount, 102); i++) {
+                        if (i < 32) {
+                            pinMappingIds.push(`LED${i}`);
+                        } else if (i < 64) {
+                            pinMappingIds.push(`SW${i - 32}`);
+                        } else if (i < 128) {
+                            pinMappingIds.push(`DIGIT_${Math.floor((i - 64) / 7)}_${['a','b','c','d','e','f','g'][(i - 64) % 7]}`);
+                        } else if (i < 136) {
+                            pinMappingIds.push(`BTN${i - 128}`);
+                        } else if (i < 144) {
+                            pinMappingIds.push(`MATRIX_COL${i - 136}`);
+                        } else if (i < 152) {
+                            pinMappingIds.push(`MATRIX_ROW${i - 144}`);
+                        } else if (i === 152) {
+                            pinMappingIds.push(`BUZZER`);
+                        } else if (i < 154) {
+                            pinMappingIds.push(`A7_BTN${i - 153}`);
+                        } else {
+                            pinMappingIds.push(`PIN${i}`);
+                        }
+                    }
+                }
+                
+                const pinMapping = pinMappingIds.map(id => getPinName(id));
+                const parsedData = parseWaveformData(data.waveforms, pinMappingIds);
+
+                await this.saveCycleData(deviceId, data.waveforms, pinMappingIds);
+
+                const transposedWaveforms = transposeWaveforms(data.waveforms);
+
+                let requestedWaveforms;
+                if (isAutoGenerated) {
+                    requestedWaveforms = transposedWaveforms.slice(0, 102);
+                } else {
+                    requestedWaveforms = pinMappingIds.map(pinId => {
+                        const bitIndex = pinId - 1;
+                        return transposedWaveforms[bitIndex] || [];
+                    });
+                }
+
+                try {
+                    broadcastDeviceData({
+                        deviceId: deviceId,
+                        type: 'waveform_update',
+                        waveforms: requestedWaveforms,
+                        pinMapping: pinMapping,
+                        parsedData: parsedData,
+                        timestamp: new Date().toISOString()
+                    });
+                    console.log(`[WebSocket] Broadcast to clients: ${pinMapping.length} pins (transposed), names: ${pinMapping.join(', ')}`);
+                } catch (error) {
+                    console.error(`[ERROR] [${deviceId}] WebSocket broadcast failed: ${error.message}`);
+                }
+            });
+
+            parser.on('parse-error', (error) => {
+                console.error(`[ERROR] [${error.deviceId}] Parse error: ${error.message}`, error.details || '');
+            });
+
+            socket.on('data', (chunk) => {
+                this.handleIncomingData(socket, chunk, parser, clientId);
+            });
+
+            socket.on('close', () => {
+                console.log(`[TCP] Client disconnected: ${clientId}`);
+
+                if (socket.deviceId) {
+                    this.deviceSocketMap.delete(socket.deviceId);
+                    this.deviceContexts.delete(socket.deviceId);
+
+                    broadcastToTeachers('global-device-status', {
+                        deviceId: socket.deviceId,
+                        status: 'offline',
+                        action: 'device_offline',
+                        timestamp: new Date().toISOString()
+                    });
+                }
+
+                this.clientParsers.delete(socket);
+            });
+
+            socket.on('error', (err) => {
+                console.error(`[ERROR] TCP connection error from ${clientId}:`, err.message);
+            });
+        });
+
+        this.server.listen(this.port, () => {
+            console.log(`[TCP] Server listening on port ${this.port}`);
+        });
+
+        this.server.on('error', (err) => {
+            console.error('[ERROR] TCP server error:', err);
+        });
+    }
+
+    handleIncomingData(socket, chunk, parser, clientId) {
+        const firstByte = chunk[0];
+
+        if (firstByte === 0xFF && chunk.length >= 4 && chunk[1] === 0xFE && chunk[2] === 0xCC && chunk[3] === 0xCC) {
+            if (chunk.length === 16) {
+                socket.deviceId = 'demo_device';
+                parser.deviceId = 'demo_device';
+                
+                if (!this.deviceSocketMap.has(socket.deviceId)) {
+                    this.deviceSocketMap.set(socket.deviceId, socket);
+                }
+                
+                console.log(`[TCP] 设备通过二进制注册包连接: ${socket.deviceId}`);
+                console.log(`[TCP] 注册包: ${chunk.toString('hex').toUpperCase()}`);
+
+                const ackBuffer = Buffer.alloc(8);
+                ackBuffer.writeUInt16BE(0xFFFE, 0);
+                ackBuffer.writeUInt16BE(0x0001, 2);
+                ackBuffer.writeUInt32BE(0x00000000, 4);
+                socket.write(ackBuffer);
+
+                broadcastToTeachers('global-device-status', {
+                    deviceId: socket.deviceId,
+                    status: 'online',
+                    action: 'device_online',
+                    timestamp: new Date().toISOString()
+                });
+                return;
+            } else if (chunk.length >= 6) {
+                parser.addData(chunk);
+            }
+        } else if (firstByte === 0xFF) {
+            parser.addData(chunk);
+        } else if (firstByte === 0x7B || firstByte === 0x7D) {
+            try {
+                const msg = chunk.toString('utf8').trim();
+                const data = JSON.parse(msg);
+
+                if (data.type === 'register') {
+                    socket.deviceId = data.deviceId || socket.deviceId;
+                    parser.deviceId = socket.deviceId;
+                    this.deviceSocketMap.set(socket.deviceId, socket);
+                    console.log(`[TCP] Device registered: ${socket.deviceId}`);
+
+                    const ackBuffer = Buffer.alloc(8);
+                    ackBuffer.writeUInt16BE(0xFFFE, 0);
+                    ackBuffer.writeUInt16BE(0x0001, 2);
+                    ackBuffer.writeUInt32BE(0x00000000, 4);
+                    socket.write(ackBuffer);
+
+                    broadcastToTeachers('global-device-status', {
+                        deviceId: socket.deviceId,
+                        status: 'online',
+                        action: 'device_online',
+                        timestamp: new Date().toISOString()
+                    });
+                } else if (data.type === 'heartbeat') {
+                    const hbAck = Buffer.from([0xFF, 0xFE, 0x00, 0x02]);
+                    socket.write(hbAck);
+                }
+            } catch (e) {
+                const remaining = chunk.slice(1);
+                if (remaining.length > 0 && (remaining[0] === 0x7B || remaining[0] === 0x7D)) {
+                    this.handleIncomingData(socket, remaining, parser, clientId);
+                }
+            }
+        } else if (firstByte === 0xAA) {
+            const hbAck = Buffer.from([0xFF, 0xFE, 0x00, 0x02]);
+            socket.write(hbAck);
+        }
+    }
+
+    async saveCycleData(deviceId, waveforms, pinMapping) {
+        try {
+            const deviceDbId = await DataRecord._getOrCreateDevice(deviceId);
+            const deviceContext = this.deviceContexts.get(deviceId);
+            const submissionId = deviceContext?.experimentId || null;
+
+            const sql = `
+                INSERT INTO experiment_data (submission_id, device_id, timestamp, pin_mapping_json, waveforms_json, sample_count, channel_count)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            `;
+            const channelCount = waveforms.length;
+            const sampleCount = waveforms[0]?.length || 0;
+
+            await pool().execute(sql, [
+                submissionId || null,
+                deviceDbId,
+                new Date(),
+                JSON.stringify(pinMapping || []),
+                JSON.stringify(waveforms),
+                sampleCount,
+                channelCount
+            ]);
+            console.log(`[DB] Data saved for device: ${deviceId}`);
+        } catch (error) {
+            console.error(`[ERROR] [${deviceId}] Failed to save data: ${error.message}`);
+        }
+    }
+
+    sendCommand(deviceId, command) {
+        const socket = this.deviceSocketMap.get(deviceId);
+
+        if (!socket || socket.destroyed) {
+            console.warn(`[WARN] Device ${deviceId} not connected`);
+            return false;
+        }
+
+        if (typeof command === 'string') {
+            socket.write(command + '\n');
+            console.log(`[TCP] Sent string command to ${deviceId}: ${command}`);
+            return true;
+        }
+
+        if (typeof command === 'object') {
+            if (command.action === 'start_capture' || command.action === 'capture') {
+                const requestedPins = command.requestedPins || [];
+                const { validIds, invalidPins } = validatePinIds(requestedPins);
+
+                if (invalidPins.length > 0) {
+                    console.warn(`[WARN] Invalid pin names: ${invalidPins.join(', ')}`);
+                }
+
+                const packetCount = validIds.length || 2;
+
+                let triggerCondition = 0x0000;
+                if (validIds.length > 0) {
+                    triggerCondition = 0xFF00 | validIds[0];
+                }
+
+                const cmdBuffer = buildCommandBuffer({
+                    triggerCondition: triggerCondition,
+                    packetCount: packetCount,
+                    requestedPins: validIds
+                });
+
+                socket.write(cmdBuffer);
+
+                this.deviceContexts.set(deviceId, {
+                    pinMapping: validIds,
+                    requestedPinNames: requestedPins,
+                    experimentId: command.experimentId || 0,
+                    lastCommandTime: Date.now()
+                });
+
+                const parser = this.clientParsers.get(socket);
+                if (parser) {
+                    parser.setExpectedPacketCount(packetCount);
+                }
+
+                console.log(`[TCP] Sent capture command to ${deviceId}:`);
+                console.log(`  - Pins: ${validIds.length} (${validIds.join(', ')})`);
+                console.log(`  - Trigger: 0x${triggerCondition.toString(16).toUpperCase().padStart(4, '0')}`);
+                console.log(`  - Packet count: ${packetCount}`);
+                console.log(`  - Buffer: ${cmdBuffer.toString('hex').toUpperCase()}`);
+
+                return true;
+
+            } else if (command.action === 'stop_capture') {
+                const cmdBuffer = buildCommandBuffer({
+                    triggerCondition: 0x0000,
+                    packetCount: 0
+                });
+
+                socket.write(cmdBuffer);
+
+                this.deviceContexts.delete(deviceId);
+
+                console.log(`[TCP] Sent stop command to ${deviceId}`);
+                return true;
+
+            } else if (command.action === 'diagnose') {
+                const cmdBuffer = buildCommandBuffer({
+                    triggerCondition: 0xFFFF,
+                    packetCount: 32
+                });
+
+                socket.write(cmdBuffer);
+                console.log(`[TCP] Sent diagnose command to ${deviceId}`);
+                return true;
+            } else {
+                socket.write(JSON.stringify(command) + '\n');
+                console.log(`[TCP] Sent JSON command to ${deviceId}:`, command);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    stop() {
+        return new Promise((resolve) => {
+            if (this.server) {
+                this.server.close(() => {
+                    console.log('[TCP] Server stopped');
+                    this.clientParsers.clear();
+                    this.deviceSocketMap.clear();
+                    this.deviceContexts.clear();
+                    resolve();
+                });
+            } else {
+                resolve();
+            }
+        });
+    }
+}
+
+let tcpServerInstance = null;
+
+function startTCPServer(port) {
+    if (!tcpServerInstance) {
+        tcpServerInstance = new TCPServer(port);
+        tcpServerInstance.start();
+    }
+    return tcpServerInstance;
+}
+
+function getTCPServer() {
+    return tcpServerInstance;
+}
+
+module.exports = {
+    startTCPServer,
+    getTCPServer,
+    buildCommandBuffer,
+    parseWaveformData
+};

@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>注册 - FPGA实验教学系统</title>
+    <link rel="stylesheet" href="css/base.css">
+    <link rel="stylesheet" href="css/common.css">
+</head>
+<body>
+    <div class="login-container">
+        <div class="login-card">
+            <div class="login-header">
+                <h1>📝 用户注册</h1>
+                <p>创建新账号</p>
+            </div>
+            
+            <form id="registerForm" class="login-form">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="regUsername">用户名*</label>
+                        <input type="text" id="regUsername" name="username" required 
+                               placeholder="英文用户名">
+                    </div>
+                    <div class="form-group">
+                        <label for="fullName">真实姓名*</label>
+                        <input type="text" id="fullName" name="real_name" required 
+                               placeholder="真实姓名">
+                    </div>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="password">密码*</label>
+                        <input type="password" id="password" name="password" required 
+                               placeholder="至少6位">
+                    </div>
+                    <div class="form-group">
+                        <label for="confirmPassword">确认密码*</label>
+                        <input type="password" id="confirmPassword" name="confirmPassword" required 
+                               placeholder="再次输入密码">
+                    </div>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="email">邮箱</label>
+                        <input type="email" id="email" name="email" 
+                               placeholder="可选">
+                    </div>
+                    <div class="form-group">
+                        <label for="studentId">学号/工号</label>
+                        <input type="text" id="studentId" name="student_number" 
+                               placeholder="学生学号或教师工号">
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="role">身份*</label>
+                    <select id="role" name="role" required>
+                        <option value="">请选择身份</option>
+                        <option value="student">学生</option>
+                        <option value="teacher">教师</option>
+                    </select>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="department">院系</label>
+                        <input type="text" id="department" name="department" 
+                               placeholder="所属院系">
+                    </div>
+                    <div class="form-group">
+                        <label for="className">班级</label>
+                        <input type="text" id="className" name="class_name" 
+                               placeholder="班级名称">
+                    </div>
+                </div>
+                
+                <button type="submit" class="btn btn-primary btn-block">注册</button>
+                
+                <div class="login-links">
+                    <a href="login.html">已有账号？登录</a>
+                    <a href="index.html">返回首页</a>
+                </div>
+            </form>
+            
+            <div id="registerMessage" class="message hidden"></div>
+        </div>
+    </div>
+    
+    <script src="js/auth.js"></script>
+</body>
+</html>
