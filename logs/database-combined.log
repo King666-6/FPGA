@@ -688,3 +688,6 @@
 {"level":"info","message":"数据库连接已建立","timestamp":"2026-03-21T10:44:30.663Z"}
 {"database":"fpga_teaching_system","host":"localhost","level":"info","message":"✅ 数据库连接成功","timestamp":"2026-03-21T10:44:30.667Z"}
 {"level":"info","message":"数据库连接已建立","timestamp":"2026-03-21T10:44:33.541Z"}
+{"level":"info","message":"数据库连接已建立","timestamp":"2026-03-21T11:01:47.754Z"}
+{"database":"fpga_teaching_system","host":"localhost","level":"info","message":"✅ 数据库连接成功","timestamp":"2026-03-21T11:01:47.758Z"}
+{"level":"info","message":"数据库连接已建立","timestamp":"2026-03-21T11:01:51.868Z"}
