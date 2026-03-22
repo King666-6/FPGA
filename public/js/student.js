@@ -341,6 +341,9 @@ class StudentDashboard {
         this.socket = null;
         this.connected = false;
         this.isCapturing = false;
+        this.isRecording = false;
+        this.recordBuffer = null;
+        this.recordPinMapping = null;
         this.boundDeviceId = null;
         this.selectedExperiment = null;
         this.activeCapturePins = null;
@@ -377,6 +380,9 @@ class StudentDashboard {
                 this.selectedExperiment = this.experiments.find(exp => exp.id == selectedValue);
             }
         });
+
+        document.getElementById('startRecordBtn')?.addEventListener('click', () => this.toggleRecord());
+        document.getElementById('submitWaveformBtn')?.addEventListener('click', () => this.submitWaveform());
     }
 
     async loadExperiments() {
@@ -414,12 +420,17 @@ class StudentDashboard {
         const customCaptureBtn = document.getElementById('customCaptureBtn');
         const pauseCaptureBtn = document.getElementById('pauseCaptureBtn');
         const disconnectBtn = document.getElementById('disconnectBtn');
-        
+
         connectBtn.disabled = this.connected;
         startCaptureBtn.disabled = !this.connected || this.isCapturing;
         customCaptureBtn.disabled = !this.connected || this.isCapturing;
         pauseCaptureBtn.disabled = !this.isCapturing;
         disconnectBtn.disabled = !this.connected && !this.isCapturing;
+
+        const startRecordBtn = document.getElementById('startRecordBtn');
+        if (startRecordBtn) {
+            startRecordBtn.disabled = !this.isCapturing;
+        }
     }
 
     initPanels() {
@@ -802,16 +813,106 @@ class StudentDashboard {
 
     pauseCapture() {
         if (!this.socket || !this.connected) return;
-        
+
         this.socket.emit('stop_capture', {
             deviceId: this.boundDeviceId || 'demo_device'
         });
-        
+
         console.log('发送 stop_capture 指令');
         this.isCapturing = false;
         this.activeCapturePins = null;
         this.applyPanelFilter(null);
         this.updateButtonStates();
+    }
+
+    toggleRecord() {
+        if (!this.isRecording) {
+            this.isRecording = true;
+            this.recordBuffer = this.waveformVisualizer.historyWaveforms.map(ch => [...(ch || [])]);
+            this.recordPinMapping = this.waveformVisualizer._lastPinMapping ?
+                [...this.waveformVisualizer._lastPinMapping] : [...(this.activeCapturePins || [])];
+
+            const btn = document.getElementById('startRecordBtn');
+            btn.textContent = '⏹ 停止记录';
+            btn.classList.remove('btn-warning');
+            btn.classList.add('btn-danger');
+
+            document.getElementById('submitWaveformBtn').hidden = true;
+            console.log('[Record] 开始录制，初始通道数:', this.recordBuffer.length);
+        } else {
+            this.isRecording = false;
+            const currentWaveforms = this.waveformVisualizer.historyWaveforms;
+            const newWaveforms = currentWaveforms.map((ch, i) => {
+                const startLen = this.recordBuffer[i]?.length || 0;
+                return (ch || []).slice(startLen);
+            });
+
+            this.recordBuffer = newWaveforms;
+            const btn = document.getElementById('startRecordBtn');
+            btn.textContent = '⏺ 开始记录';
+            btn.classList.remove('btn-danger');
+            btn.classList.add('btn-warning');
+
+            const totalSamples = this.recordBuffer[0]?.length || 0;
+            document.getElementById('submitWaveformBtn').hidden = false;
+            console.log('[Record] 停止录制，采集样本数:', totalSamples);
+            if (totalSamples === 0) {
+                alert('录制时间太短，未采集到有效数据');
+                document.getElementById('submitWaveformBtn').hidden = true;
+            }
+        }
+    }
+
+    async submitWaveform() {
+        if (!this.recordBuffer || this.recordBuffer.length === 0) {
+            alert('没有可提交的波形数据，请先录制');
+            return;
+        }
+        const totalSamples = this.recordBuffer[0]?.length || 0;
+        if (totalSamples === 0) {
+            alert('波形数据为空，请重新录制');
+            return;
+        }
+        if (!confirm(`确认提交波形数据？\n通道数：${this.recordBuffer.length}\n采样点数：${totalSamples}`)) return;
+
+        const token = localStorage.getItem('token');
+        const submitBtn = document.getElementById('submitWaveformBtn');
+        submitBtn.disabled = true;
+        submitBtn.textContent = '提交中...';
+
+        try {
+            const payload = {
+                device_id: this.boundDeviceId || 'demo_device',
+                experiment_id: this.selectedExperiment?.id || null,
+                class_id: null,
+                pin_mapping: this.recordPinMapping || this.activeCapturePins || [],
+                waveforms: this.recordBuffer
+            };
+            const response = await fetch('/api/experiments/submissions/create-with-waveform', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify(payload)
+            });
+            const result = await response.json();
+
+            if (result.success) {
+                alert(`✅ 波形提交成功！\n提交ID: ${result.data.submission_id}`);
+                this.recordBuffer = null;
+                this.recordPinMapping = null;
+                submitBtn.hidden = true;
+                document.getElementById('startRecordBtn').textContent = '⏺ 开始记录';
+                document.getElementById('startRecordBtn').classList.remove('btn-danger');
+                document.getElementById('startRecordBtn').classList.add('btn-warning');
+            } else {
+                alert('提交失败：' + result.error);
+            }
+        } catch (error) {
+            console.error('提交波形失败:', error);
+            alert('提交失败，请检查网络连接');
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.textContent = '📤 提交波形';
+        }
     }
 
     disconnect() {

@@ -160,7 +160,7 @@ router.get('/students/stats', authenticate, authorize(['teacher', 'admin']), asy
 
 router.get('/submissions', authenticate, authorize(['teacher', 'admin']), async (req, res) => {
     try {
-        const { time_range = 'today' } = req.query;
+        const { time_range = 'all', student_id } = req.query;
         const pool = db.getPool();
 
         let timeCondition = '';
@@ -172,10 +172,16 @@ router.get('/submissions', authenticate, authorize(['teacher', 'admin']), async 
                 timeCondition = 'AND es.started_at >= DATE_SUB(NOW(), INTERVAL 1 MONTH)';
                 break;
             case 'today':
-            default:
                 timeCondition = 'AND DATE(es.started_at) = CURDATE()';
                 break;
+            default:
+                timeCondition = '';
+                break;
         }
+        const studentIdFilter = student_id ? 'AND es.student_id = ?' : '';
+
+        const params = [req.user.id];
+        if (student_id) params.push(parseInt(student_id));
 
         const [submissions] = await pool.execute(`
             SELECT es.*,
@@ -189,8 +195,9 @@ router.get('/submissions', authenticate, authorize(['teacher', 'admin']), async 
             JOIN devices d ON es.device_id = d.id
             WHERE e.teacher_id = ?
               ${timeCondition}
+              ${studentIdFilter}
             ORDER BY es.started_at DESC
-        `, [req.user.id]);
+        `, params);
 
         res.json({
             success: true,
@@ -281,11 +288,17 @@ router.get('/submissions/:submissionId', authenticate, async (req, res) => {
 
         const data = await DataRecord.getSubmissionRecords(submissionId);
 
+        const firstRecord = data[0];
+        const pinMapping = firstRecord?.waveforms ?
+            (await pool.execute('SELECT pin_mapping_json FROM experiment_data WHERE submission_id = ? ORDER BY timestamp ASC LIMIT 1', [submissionId]))[0][0]?.pin_mapping_json
+            : null;
+
         res.json({
             success: true,
             submission: submission,
             data: data,
-            data_count: data.length
+            data_count: data.length,
+            pin_mapping: pinMapping ? JSON.parse(pinMapping) : []
         });
 
     } catch (error) {
@@ -594,6 +607,77 @@ router.post('/', authenticate, authorize(['teacher', 'admin']), async (req, res)
             success: false,
             error: error.message || '创建实验失败'
         });
+    }
+});
+
+router.post('/submissions/create-with-waveform', authenticate, isStudent, async (req, res) => {
+    try {
+        const { experiment_id, device_id, class_id, pin_mapping, waveforms } = req.body;
+        const pool = db.getPool();
+
+        if (!device_id || !waveforms || !Array.isArray(waveforms) || waveforms.length === 0) {
+            return res.status(400).json({ success: false, error: '设备ID和波形数据不能为空' });
+        }
+
+        const [deviceRows] = await pool.execute(
+            'SELECT id FROM devices WHERE device_id = ?',
+            [device_id]
+        );
+        if (deviceRows.length === 0) {
+            return res.status(404).json({ success: false, error: '设备不存在' });
+        }
+        const deviceDbId = deviceRows[0].id;
+
+        let finalExperimentId = experiment_id || null;
+        if (finalExperimentId) {
+            const [expRows] = await pool.execute(
+                'SELECT id FROM experiments WHERE id = ?',
+                [finalExperimentId]
+            );
+            if (expRows.length === 0) {
+                return res.status(404).json({ success: false, error: '实验不存在' });
+            }
+        }
+
+        const [submissionResult] = await pool.execute(
+            `INSERT INTO experiment_submissions
+             (student_id, experiment_id, device_id, class_id, status, started_at, submitted_at)
+             VALUES (?, ?, ?, ?, 'submitted', NOW(), NOW())`,
+            [req.user.id, finalExperimentId, deviceDbId, class_id || null]
+        );
+        const submissionId = submissionResult.insertId;
+
+        const channelCount = waveforms.length;
+        const sampleCount = waveforms[0]?.length || 0;
+        const pinMappingStr = JSON.stringify(pin_mapping || []);
+        const waveformsStr = JSON.stringify(waveforms);
+
+        await pool.execute(
+            `INSERT INTO experiment_data
+             (submission_id, device_id, timestamp, pin_mapping_json, waveforms_json, sample_count, channel_count)
+             VALUES (?, ?, NOW(), ?, ?, ?, ?)`,
+            [submissionId, deviceDbId, pinMappingStr, waveformsStr, sampleCount, channelCount]
+        );
+
+        await pool.execute(
+            `INSERT INTO system_logs (user_id, action_type, action_description)
+             VALUES (?, 'submit_waveform', ?)`,
+            [req.user.id, `学生提交波形数据: submission_id=${submissionId}, 通道数=${channelCount}, 采样点数=${sampleCount}`]
+        );
+
+        res.status(201).json({
+            success: true,
+            message: '波形数据提交成功',
+            data: {
+                submission_id: submissionId,
+                channel_count: channelCount,
+                sample_count: sampleCount
+            }
+        });
+
+    } catch (error) {
+        console.error('提交波形数据错误:', error);
+        res.status(500).json({ success: false, error: error.message || '提交波形数据失败' });
     }
 });
 

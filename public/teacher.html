@@ -6,6 +6,15 @@
     <title>教师管理面板 - FPGA实验教学系统</title>
     <link rel="stylesheet" href="css/common.css">
     <link rel="stylesheet" href="css/teacher-dashboard.css">
+    <style>
+    .student-item { display: flex; justify-content: space-between; align-items: center; padding: 10px; border-bottom: 1px solid #f0f0f0; gap: 8px; }
+    .student-item:hover { background: #f8f9fa; }
+    .student-info { display: flex; flex-direction: column; }
+    .student-name { font-weight: 500; font-size: 14px; }
+    .student-username { font-size: 12px; color: #666; }
+    .btn-remove { color: #dc3545; background: none; border: none; cursor: pointer; padding: 5px 10px; font-size: 13px; }
+    .btn-remove:hover { background: #fee; border-radius: 4px; }
+    </style>
 </head>
 <body>
     <!-- 顶部导航栏 -->

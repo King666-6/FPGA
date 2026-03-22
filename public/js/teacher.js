@@ -1706,10 +1706,13 @@ class ClassManagerModule {
             list.innerHTML = students.map(student => `
                 <div class="student-item" data-student-id="${student.id || student.user_id}">
                     <div class="student-info">
-                        <span class="student-name">${student.name || student.username || '未知'}</span>
+                        <span class="student-name">${student.real_name || student.username || '学生'}</span>
                         <span class="student-username">${student.username || ''}</span>
                     </div>
-                    <button class="btn-remove" onclick="window.teacherApp.modules.classes.removeStudent(${classId}, ${student.id || student.user_id})">移除</button>
+                    <div style="display:flex;gap:6px;">
+                        <button class="btn btn-small btn-info" onclick="window.teacherApp.modules.classes.viewStudentSubmissions(${student.id || student.user_id}, '${student.real_name || student.username || '学生'}')">📊 查看提交</button>
+                        <button class="btn-remove" onclick="window.teacherApp.modules.classes.removeStudent(${classId}, ${student.id || student.user_id})">移除</button>
+                    </div>
                 </div>
             `).join('');
 
@@ -1771,6 +1774,99 @@ class ClassManagerModule {
             }
         } catch (error) {
             alert(`错误: ${error.message}`);
+        }
+    }
+
+    async viewStudentSubmissions(studentId, studentName) {
+        const modal = document.getElementById('modalOverlay');
+        const title = document.getElementById('modalTitle');
+        const body = document.getElementById('modalBody');
+
+        title.textContent = `学生提交记录 - ${studentName}`;
+        body.innerHTML = `
+            <div id="submissionListContainer">
+                <div class="submissions-loading">加载中...</div>
+            </div>
+        `;
+
+        modal.style.display = 'flex';
+
+        try {
+            const result = await this.app.apiCall(`/experiments/submissions?student_id=${studentId}&time_range=all`);
+
+            const container = document.getElementById('submissionListContainer');
+
+            if (!result.success || !result.submissions || result.submissions.length === 0) {
+                container.innerHTML = '<div class="student-empty">暂无提交记录</div>';
+                return;
+            }
+
+            container.innerHTML = result.submissions.map(sub => `
+                <div class="student-item">
+                    <div class="student-info">
+                        <span class="student-name">${sub.experiment_name || '实验' + sub.experiment_id}</span>
+                        <span class="student-username">
+                            状态: ${sub.status} | 
+                            开始: ${sub.started_at ? new Date(sub.started_at).toLocaleString() : '-'}
+                        </span>
+                    </div>
+                    <button class="btn btn-small btn-info" onclick="window.teacherApp.modules.classes.viewSubmissionWaveform(${sub.id})">📈 查看波形</button>
+                </div>
+            `).join('');
+        } catch (error) {
+            console.error('加载提交记录失败:', error);
+            container.innerHTML = '<div class="student-empty">加载失败</div>';
+        }
+    }
+
+    async viewSubmissionWaveform(submissionId) {
+        const modal = document.getElementById('modalOverlay');
+        const title = document.getElementById('modalTitle');
+        const body = document.getElementById('modalBody');
+
+        title.textContent = `波形详情 - 提交 #${submissionId}`;
+        body.innerHTML = `
+            <div id="waveformViewerContainer">
+                <div class="submissions-loading">加载波形数据...</div>
+            </div>
+        `;
+
+        modal.style.display = 'flex';
+
+        try {
+            const result = await this.app.apiCall(`/experiments/submissions/${submissionId}`);
+
+            const container = document.getElementById('waveformViewerContainer');
+
+            if (!result.success || !result.data || result.data.length === 0) {
+                container.innerHTML = '<div class="student-empty">暂无波形数据</div>';
+                return;
+            }
+
+            const waveforms = result.data[0].waveforms;
+            const pinMapping = result.pin_mapping || [];
+
+            if (!waveforms || !Array.isArray(waveforms) || waveforms.length === 0) {
+                container.innerHTML = '<div class="student-empty">波形数据格式错误</div>';
+                return;
+            }
+
+            container.innerHTML = `
+                <div style="margin-bottom:15px;">
+                    <strong>通道数:</strong> ${waveforms.length} | 
+                    <strong>采样点数:</strong> ${waveforms[0]?.length || 0}
+                </div>
+                <div style="background:#1a1a2e;border-radius:6px;padding:8px;overflow-y:auto;max-height:400px;">
+                    <canvas id="replayWaveformCanvas" style="width:100%;min-height:300px;"></canvas>
+                </div>
+            `;
+
+            const visualizer = new ObserveVisualizer('replayWaveformCanvas');
+            visualizer.appendWaveform(waveforms, pinMapping);
+
+        } catch (error) {
+            console.error('加载波形失败:', error);
+            container.innerHTML = '<div class="student-empty">加载失败</div>';
         }
     }
 
