@@ -47,15 +47,45 @@
     box-sizing: border-box;
 }
 
-.f-digits {
+.fpga-board-container {
+    aspect-ratio: 2338 / 3609;
+    position: relative;
+    width: 100%;
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+.board-bg-img {
+    width: 100%;
+    display: block;
+}
+
+.board-components-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+}
+
+.absolute-layer > * {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    pointer-events: auto;
+}
+
+/* .f-digits 已移除，使用绝对定位布局 */
+/* .f-digits {
     display: flex;
     justify-content: center;
     margin-bottom: 12px;
     gap: 4px;
     flex-wrap: wrap;
-}
+} */
 
-.f-io-panel {
+/* .f-io-panel 已移除，使用绝对定位布局 */
+/* .f-io-panel {
     display: flex;
     gap: 12px;
     margin-bottom: 12px;
@@ -73,7 +103,7 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
-}
+} */
 
 .f-section {
     padding: 8px;
@@ -88,21 +118,21 @@
     font-weight: 500;
 }
 
-/* LED 2排16个布局 */
-.f-leds {
+/* .f-leds 已移除，使用绝对定位布局 */
+/* .f-leds {
     display: grid;
     grid-template-columns: repeat(16, 1fr);
     gap: 6px;
     width: 100%;
-}
+} */
 
-/* 开关 2排16个布局 */
-.f-switches {
+/* .f-switches 已移除，使用绝对定位布局 */
+/* .f-switches {
     display: grid;
     grid-template-columns: repeat(16, 1fr);
     gap: 6px;
     width: 100%;
-}
+} */
 
 /* LED 样式 */
 .led {
@@ -564,3 +594,54 @@
         grid-template-columns: repeat(16, 1fr);
     }
 }
+
+/* 数码管定位 */
+.digit:nth-child(1) { left: 3.508%; top: 1.607%; }
+.digit:nth-child(2) { left: 10.864%; top: 1.607%; }
+.digit:nth-child(3) { left: 18.777%; top: 1.607%; }
+.digit:nth-child(4) { left: 27.417%; top: 1.607%; }
+.digit:nth-child(5) { left: 36.056%; top: 1.607%; }
+.digit:nth-child(6) { left: 43.969%; top: 1.607%; }
+.digit:nth-child(7) { left: 51.882%; top: 1.607%; }
+.digit:nth-child(8) { left: 59.796%; top: 1.607%; }
+
+/* LED 定位 */
+.led:nth-child(1) { left: 9.795%; top: 11.528%; }
+.led:nth-child(2) { left: 15.654%; top: 11.528%; }
+.led:nth-child(3) { left: 22.454%; top: 11.583%; }
+.led:nth-child(4) { left: 29.256%; top: 11.556%; }
+.led:nth-child(5) { left: 36.056%; top: 11.583%; }
+.led:nth-child(6) { left: 42.856%; top: 11.556%; }
+.led:nth-child(7) { left: 49.658%; top: 11.583%; }
+.led:nth-child(8) { left: 56.460%; top: 11.556%; }
+.led:nth-child(9) { left: 9.795%; top: 15.657%; }
+.led:nth-child(10) { left: 15.654%; top: 15.657%; }
+.led:nth-child(11) { left: 22.454%; top: 15.685%; }
+.led:nth-child(12) { left: 29.256%; top: 15.657%; }
+.led:nth-child(13) { left: 36.056%; top: 15.739%; }
+.led:nth-child(14) { left: 42.856%; top: 15.713%; }
+.led:nth-child(15) { left: 49.658%; top: 15.713%; }
+.led:nth-child(16) { left: 56.460%; top: 15.685%; }
+
+/* 拨码开关定位 */
+.switch:nth-child(1) { left: 8.727%; top: 21.586%; }
+.switch:nth-child(2) { left: 15.654%; top: 21.586%; }
+.switch:nth-child(3) { left: 22.454%; top: 21.586%; }
+.switch:nth-child(4) { left: 29.128%; top: 21.586%; }
+.switch:nth-child(5) { left: 36.056%; top: 21.586%; }
+.switch:nth-child(6) { left: 42.856%; top: 21.586%; }
+.switch:nth-child(7) { left: 49.530%; top: 21.586%; }
+.switch:nth-child(8) { left: 56.460%; top: 21.586%; }
+.switch:nth-child(9) { left: 8.727%; top: 29.842%; }
+.switch:nth-child(10) { left: 15.654%; top: 29.842%; }
+.switch:nth-child(11) { left: 22.454%; top: 29.842%; }
+.switch:nth-child(12) { left: 29.128%; top: 29.786%; }
+.switch:nth-child(13) { left: 36.056%; top: 29.786%; }
+.switch:nth-child(14) { left: 42.856%; top: 29.786%; }
+.switch:nth-child(15) { left: 49.530%; top: 29.786%; }
+.switch:nth-child(16) { left: 56.460%; top: 29.786%; }
+
+/* 独立按键定位 (已修正越界坐标) */
+.f-btn:nth-child(1) { left: 81.8%; top: 27.7%; }
+.f-btn:nth-child(2) { left: 88.4%; top: 27.7%; }
+.f-btn:nth-child(3) { left: 94.9%; top: 27.7%; }

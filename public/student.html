@@ -41,36 +41,15 @@
         </div>
 
         <div class="f-main">
-            <div class="f-digits" id="digit-container"></div>
-            
-            <div class="f-io-panel">
-                <div class="f-left">
-                    <div class="f-section">
-                        <span class="f-section-label">💡 LED</span>
-                        <div id="led-container" class="f-leds"></div>
-                    </div>
-                    <div class="f-section">
-                        <span class="f-section-label">🔌 开关</span>
-                        <div id="switch-container" class="f-switches"></div>
-                    </div>
-                </div>
-                <div class="f-right">
-                    <div class="f-section">
-                        <span class="f-section-label">🔘 独立按键</span>
-                        <div id="btn-container" class="f-buttons"></div>
-                    </div>
-                    <div class="f-section">
-                        <span class="f-section-label">🔢 矩阵按键</span>
-                        <div id="matrix-container" class="f-matrix"></div>
-                    </div>
-                    <div class="f-section">
-                        <span class="f-section-label">🔊 蜂鸣器</span>
-                        <div id="buzzer-container" class="f-buzzer"></div>
-                    </div>
-                    <div class="f-section">
-                        <span class="f-section-label">🔘 A7 独立按键</span>
-                        <div id="a7btn-container" class="f-buttons"></div>
-                    </div>
+            <div class="fpga-board-container">
+                <img src="images/board-bg.png " class="board-bg-img" alt="FPGA Board">
+                <div class="board-components-layer">
+                    <div id="digit-container" class="absolute-layer"></div>
+                    <div id="led-container" class="absolute-layer"></div>
+                    <div id="switch-container" class="absolute-layer"></div>
+                    <div id="btn-container" class="absolute-layer"></div>
+                    <div id="matrix-container" class="absolute-layer"></div>
+                    <div id="buzzer-container" class="absolute-layer"></div>
                 </div>
             </div>
 
