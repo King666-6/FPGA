@@ -1,9 +1,10 @@
 const { EventEmitter } = require('events');
 
+const LARGE_FRAME_HEADER = Buffer.from([0xFF, 0xFE]);
+const LARGE_HEADER_SIZE = 10;
 const FRAME_HEADER = Buffer.from([0xFF, 0xFE, 0xCC, 0xCC, 0xCC, 0xCC]);
 const FRAME_LENGTH = 72;
 const PAYLOAD_LENGTH = 64;
-const BITS_PER_PAYLOAD = PAYLOAD_LENGTH * 8;
 
 class DataParser extends EventEmitter {
     constructor(deviceId) {
@@ -27,115 +28,108 @@ class DataParser extends EventEmitter {
 
     addData(chunk) {
         this.buffer = Buffer.concat([this.buffer, chunk]);
-        this._processBuffer();
-        this._resetDebounceTimer();
-    }
 
-    _resetDebounceTimer() {
-        if (this.debounceTimeout) {
-            clearTimeout(this.debounceTimeout);
-        }
-        
-        if (this.packetCache.size > 0) {
-            this.debounceTimeout = setTimeout(() => {
-                if (this.packetCache.size > 0) {
-                    console.log(`⏱️ [${this.deviceId}] 防抖超时，主动处理缓存数据`);
-                    this._processFullCycle();
-                }
-            }, this.DEBOUNCE_DELAY);
-        }
-    }
-
-    _processBuffer() {
-        while (this.buffer.length >= FRAME_LENGTH) {
-            const headerIndex = this.buffer.indexOf(FRAME_HEADER);
+        while (this.buffer.length >= LARGE_HEADER_SIZE) {
+            const headerIndex = this.buffer.indexOf(LARGE_FRAME_HEADER);
 
             if (headerIndex === -1) {
-                this.buffer = this.buffer.slice(this.buffer.length - FRAME_HEADER.length + 1);
-                return;
+                this.buffer = Buffer.alloc(0);
+                break;
             }
 
             if (headerIndex > 0) {
                 this.buffer = this.buffer.slice(headerIndex);
             }
 
-            if (this.buffer.length < FRAME_LENGTH) {
-                return;
+            if (this.buffer.length < LARGE_HEADER_SIZE) {
+                break;
             }
 
-            const frame = this.buffer.slice(0, FRAME_LENGTH);
-            this.buffer = this.buffer.slice(FRAME_LENGTH);
+            const totalLength = this.buffer.readUInt16BE(2);
 
-            this._cacheFrame(frame);
+            if (totalLength < LARGE_HEADER_SIZE) {
+                this.buffer = this.buffer.slice(LARGE_HEADER_SIZE);
+                continue;
+            }
+
+            if (this.buffer.length < totalLength) {
+                break;
+            }
+
+            const largePacket = this.buffer.slice(0, totalLength);
+            this.buffer = this.buffer.slice(totalLength);
+
+            this.addLargePacket(largePacket);
         }
     }
 
-    _cacheFrame(frame) {
-        const sequence = frame.readUInt16BE(6);
+    addLargePacket(chunk) {
+        const totalLength = chunk.readUInt16BE(2);
+        if (chunk.length !== totalLength) {
+            this.emit('parse-error', {
+                deviceId: this.deviceId,
+                message: `大包长度不匹配：期望${totalLength}，实际${chunk.length}`
+            });
+            return;
+        }
 
-        if (this.expectedTotalPackets !== null) {
-            if (sequence === 0 && this.packetCache.size > 0) {
-                this._processFullCycle();
+        const packetCount = chunk.readUInt16BE(4);
+        const deviceNumber = chunk.slice(6, 10);
+
+        if (this.expectedTotalPackets !== null && packetCount !== this.expectedTotalPackets) {
+            console.warn(`⚠️ [${this.deviceId}] 大包计数(${packetCount})与期望(${this.expectedTotalPackets})不一致`);
+        }
+
+        const payloadStart = LARGE_HEADER_SIZE;
+        const expectedSubframes = Math.floor((totalLength - LARGE_HEADER_SIZE) / FRAME_LENGTH);
+
+        for (let i = 0; i < expectedSubframes; i++) {
+            const offset = payloadStart + i * FRAME_LENGTH;
+
+            if (offset + FRAME_LENGTH > chunk.length) {
+                break;
             }
-            this.packetCache.set(sequence, this._parsePayloadToBits(frame.slice(8, FRAME_LENGTH)));
-            
-            if (this.packetCache.size === this.expectedTotalPackets) {
-                console.log(`✅ [${this.deviceId}] 已收到全部 ${this.expectedTotalPackets} 个数据包，触发完整周期处理`);
-                this._processFullCycle();
+
+            const subFrame = chunk.slice(offset, offset + FRAME_LENGTH);
+            const subHeader = subFrame.slice(0, 6);
+
+            if (!subHeader.equals(FRAME_HEADER)) {
+                continue;
             }
-        } else {
-            if (sequence === 0 && this.packetCache.size > 0) {
-                this._processFullCycle();
-            }
-            const payload = frame.slice(8, FRAME_LENGTH);
-            const bitArray = this._parsePayloadToBits(payload);
-            this.packetCache.set(sequence, bitArray);
+
+            const sequence = subFrame.readUInt16BE(6);
+            const dataByte = subFrame[8];
+            const pinState = dataByte === 0xFF ? 1 : 0;
+
+            this.packetCache.set(sequence, pinState);
+        }
+
+        if (this.packetCache.size > 0) {
+            this._emitSnapshot();
         }
     }
 
-    _parsePayloadToBits(payload) {
-        const bits = new Array(BITS_PER_PAYLOAD);
-        for (let byteIndex = 0; byteIndex < PAYLOAD_LENGTH; byteIndex++) {
-            const byteValue = payload[byteIndex];
-            for (let bitIndex = 0; bitIndex < 8; bitIndex++) {
-                const bitPosition = bitIndex;
-                const bitValue = (byteValue >> bitPosition) & 1;
-                bits[byteIndex * 8 + bitIndex] = bitValue;
-            }
-        }
-        return bits;
-    }
-
-    _processFullCycle() {
+    _emitSnapshot() {
         if (this.debounceTimeout) {
             clearTimeout(this.debounceTimeout);
             this.debounceTimeout = null;
         }
-        
+
         try {
-            const waveforms = [];
-            const maxSequence = Math.max(...this.packetCache.keys());
+            const sequences = Array.from(this.packetCache.keys()).sort((a, b) => a - b);
+            const pinStates = sequences.map(seq => this.packetCache.get(seq));
 
-            for (let seq = 0; seq <= maxSequence; seq++) {
-                const bitArray = this.packetCache.get(seq);
-                if (bitArray) {
-                    waveforms.push(bitArray);
-                } else {
-                    // 缺失的数据填充全0占位数组
-                    waveforms.push(new Array(BITS_PER_PAYLOAD).fill(0));
-                }
-            }
-
-            this.emit('full-cycle-ready', {
+            this.emit('snapshot-ready', {
                 deviceId: this.deviceId,
-                waveforms: waveforms,
+                pinStates: pinStates
             });
         } catch (error) {
             this.emit('parse-error', {
                 deviceId: this.deviceId,
-                message: `处理完整周期数据失败: ${error.message}`,
+                message: `处理快照数据失败: ${error.message}`
             });
         }
+
         this._resetCache();
     }
 

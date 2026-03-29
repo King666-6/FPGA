@@ -11,7 +11,7 @@
     <nav class="navbar">
         <div class="nav-container">
             <div class="nav-brand">
-                <span class="logo">🔧</span>
+                <span class="logo"></span>
                 <span>FPGA实验数据采集系统</span>
             </div>
             <div class="nav-user">
@@ -32,7 +32,7 @@
                 <button id="customCaptureBtn" class="btn btn-info" disabled>自定义采集</button>
                 <button id="pauseCaptureBtn" class="btn btn-warning" disabled>暂停采集</button>
                 <button id="startRecordBtn" class="btn btn-warning" disabled>⏺ 开始记录</button>
-                <button id="submitWaveformBtn" class="btn btn-success" hidden>📤 提交波形</button>
+                <button id="submitWaveformBtn" class="btn btn-success" hidden>提交波形</button>
                 <button id="disconnectBtn" class="btn btn-danger" disabled>断开连接</button>
             </div>
             <div class="f-info">
@@ -42,19 +42,18 @@
 
         <div class="f-main">
             <div class="fpga-board-container">
-                <img src="images/board-bg.png " class="board-bg-img" alt="FPGA Board">
+                <img src="image/board-bg.png " class="board-bg-img" alt="FPGA Board">
                 <div class="board-components-layer">
                     <div id="digit-container" class="absolute-layer"></div>
                     <div id="led-container" class="absolute-layer"></div>
                     <div id="switch-container" class="absolute-layer"></div>
-                    <div id="btn-container" class="absolute-layer"></div>
-                    <div id="matrix-container" class="absolute-layer"></div>
                     <div id="buzzer-container" class="absolute-layer"></div>
+                    <div id="btn-container" class="absolute-layer"></div>
                 </div>
             </div>
 
             <section class="f-analyzer" style="min-height: 200px;">
-                <h3 class="f-section-title">📊 实时逻辑波形分析</h3>
+                <h3 class="f-section-title">实时逻辑波形分析</h3>
                 <div id="waveform-filters" class="waveform-filters"></div>
                 <div class="f-canvas-container">
                     <canvas id="waveformCanvas"></canvas>
@@ -64,7 +63,7 @@
 
         <div class="f-bottom">
             <div class="f-controls">
-                <span>💡 打开FPGA，自动接收数据</span>
+                <span>💡 完成连接自动接收数据</span>
             </div>
         </div>
     </div>
@@ -273,11 +272,6 @@
             <div class="channel-group">
                 <h4>独立按键区</h4>
                 <div id="btnChannels" class="channel-options"></div>
-            </div>
-            
-            <div class="channel-group">
-                <h4>矩阵按键区</h4>
-                <div id="matrixChannels" class="channel-options"></div>
             </div>
             
             <div class="channel-group">

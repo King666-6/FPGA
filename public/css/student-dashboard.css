@@ -41,23 +41,28 @@
 }
 
 .f-main {
-    background-color: #004D40;
+    background-color: #1a1a1a;
     padding: 12px;
     border-radius: 10px;
     box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
 }
 
 .fpga-board-container {
-    aspect-ratio: 2338 / 3609;
     position: relative;
     width: 100%;
-    max-width: 800px;
+    max-width: 1200px;
     margin: 0 auto;
 }
 
 .board-bg-img {
     width: 100%;
+    height: auto;
     display: block;
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5);
 }
 
 .board-components-layer {
@@ -67,6 +72,16 @@
     width: 100%;
     height: 100%;
     pointer-events: none;
+}
+
+.absolute-layer {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    top: 0;
+    left: 0;
+    margin: 0;
+    padding: 0;
 }
 
 .absolute-layer > * {
@@ -134,276 +149,127 @@
     width: 100%;
 } */
 
-/* LED 样式 */
+/* LED 样式 - 高保真 LED 贴片 */
 .led {
-    width: 100%;
-    aspect-ratio: 1;
-    max-width: 36px;
-    border-radius: 50%;
-    background: #00332E;
-    position: relative;
-    box-shadow: inset 0 2px 4px rgba(0,0,0,0.3);
-    justify-self: center;
+    width: 2.5%;
+    aspect-ratio: 1.2;
+    border-radius: 2px;
+    background: #e0e0d0;
+    box-shadow:
+        inset 1px 1px 2px rgba(0,0,0,0.5),
+        1px 1px 1px rgba(255,255,255,0.2);
+    border: 1px solid #888;
+    transition: all 0.1s;
 }
 
 .led.on {
-    background: #FFD700;
-    box-shadow: 0 0 15px #FFD700, inset 0 2px 4px rgba(255,255,255,0.3);
+    background: #ff3b30;
+    border-color: #cc2211;
+    box-shadow:
+        0 0 12px rgba(255, 59, 48, 0.9),
+        inset 1px 1px 3px rgba(255,255,255,0.8);
 }
 
 .led-index {
-    color: rgba(255,255,255,0.6);
-    font-size: 8px;
-    position: absolute;
-    top: -12px;
-    left: 50%;
-    transform: translateX(-50%);
+    display: none;
 }
 
-/* 开关样式 */
+/* 开关样式 - 高保真拨码开关 */
 .switch {
-    width: 100%;
-    height: 50px;
-    max-width: 28px;
-    background: #00332E;
-    border: 2px solid #002620;
-    border-radius: 4px;
-    position: relative;
-    box-shadow: inset 0 2px 4px rgba(0,0,0,0.3);
-    justify-self: center;
+    width: 2.8%;
+    height: 9.5%;
+    background: #1a1a1a;
+    border: 1px solid #000;
+    border-radius: 2px;
+    box-shadow: inset 0 2px 4px rgba(0,0,0,0.8), 0 1px 1px rgba(255,255,255,0.1);
+    cursor: pointer;
 }
 
-.switch.on {
-    background: #00695C;
-    box-shadow: 0 0 8px rgba(0,150,136,0.5);
+.switch::after {
+    content: '';
+    position: absolute;
+    width: 70%;
+    height: 40%;
+    background: linear-gradient(to bottom, #fff, #ccc);
+    left: 15%;
+    bottom: 10%;
+    border-radius: 1px;
+    box-shadow: 0 2px 3px rgba(0,0,0,0.6);
+    transition: all 0.15s cubic-bezier(0.4, 0.0, 0.2, 1);
+}
+
+.switch.on::after {
+    bottom: 50%;
+    box-shadow: 0 -2px 3px rgba(0,0,0,0.6);
 }
 
 .switch-label {
-    color: rgba(255,255,255,0.6);
-    font-size: 8px;
-    position: absolute;
-    bottom: -12px;
-    left: 50%;
-    transform: translateX(-50%);
-    white-space: nowrap;
-}
-
-/* 7段数码管 - 拟真电子表风格 */
-.f-digits .digit {
-    width: 48px;
-    height: 72px;
-    position: relative;
-    margin: 0 2px;
-    background: #1a201c;
-    border-radius: 6px;
-    transform: skewX(-8deg);
-    box-shadow:
-        inset 0 0 10px rgba(0,0,0,0.5),
-        0 2px 4px rgba(0,0,0,0.3);
-    overflow: visible;
-}
-
-.f-digits .digit .digit-value {
     display: none;
 }
 
-.f-digits .segment {
-    background: #2b332b;
+/* 七段数码管 - 高保真拟物化 */
+.digit {
+    width: 4.6%;
+    height: 11%;
+    background-color: #525854;
+    border: 1px solid #333;
+    box-shadow: inset 1px 1px 3px rgba(0,0,0,0.4);
     position: absolute;
-    transition: background-color 0.15s, box-shadow 0.15s;
-    border-radius: 1px;
+    transform: translate(-50%, -50%);
 }
 
-.f-digits .segment.on {
-    background: #ff2a2a;
-    box-shadow:
-        0 0 12px #ff2a2a,
-        0 0 20px rgba(255,42,42,0.6),
-        inset 0 0 4px rgba(255,255,255,0.3);
-}
-
-.f-digits .segment-a {
-    top: 4px;
-    left: 8px;
-    right: 8px;
-    height: 5px;
-}
-.f-digits .segment-b {
-    top: 8px;
-    right: 3px;
-    width: 5px;
-    height: 24px;
-}
-.f-digits .segment-c {
-    bottom: 8px;
-    right: 3px;
-    width: 5px;
-    height: 24px;
-}
-.f-digits .segment-d {
-    bottom: 4px;
-    left: 8px;
-    right: 8px;
-    height: 5px;
-}
-.f-digits .segment-e {
-    bottom: 8px;
-    left: 3px;
-    width: 5px;
-    height: 24px;
-}
-.f-digits .segment-f {
-    top: 8px;
-    left: 3px;
-    width: 5px;
-    height: 24px;
-}
-.f-digits .segment-g {
-    top: 50%;
-    left: 8px;
-    right: 8px;
-    height: 5px;
-    margin-top: -2.5px;
-}
-.f-digits .segment-dp {
-    bottom: 8px;
-    right: 0;
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-}
-
-.digit-separator {
-    width: 8px;
-}
-
-/* 独立按键 - 深灰工业风 */
-.f-buttons {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 6px;
-    width: 100%;
-}
-
-.f-buttons .btn-indep {
-    width: 100%;
-    height: 40px;
-    background: #2c3230;
-    border-radius: 6px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #a7ffeb;
-    font-size: 12px;
-    font-weight: 500;
-    border: 1px solid #3a4240;
-    box-shadow:
-        0 4px 0 #1a1e1c,
-        0 6px 8px rgba(0,0,0,0.3);
-    cursor: pointer;
-    transition: all 0.1s;
-    user-select: none;
-}
-
-.f-buttons .btn-indep:active {
-    transform: translateY(2px);
-    box-shadow:
-        0 2px 0 #1a1e1c,
-        0 3px 4px rgba(0,0,0,0.3);
-}
-
-.f-buttons .btn-indep.on {
-    background: #2e7d32;
-    border-color: #4CAF50;
-    color: #fff;
-    box-shadow:
-        0 4px 0 #1b5e20,
-        0 0 15px rgba(76,175,80,0.4);
-}
-
-/* A7按键底部区域 */
-#a7btn-container {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 6px;
-    width: 100%;
-}
-
-/* 矩阵按键 - 4x4网格深灰工业风 */
-.f-matrix-grid {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 4px;
-    width: 100%;
-    padding: 0;
-    background: transparent;
-}
-
-.f-matrix-grid .matrix-label {
+.digit .digit-value {
     display: none;
 }
 
-.f-matrix-grid .matrix-cell {
-    width: 100%;
-    aspect-ratio: 1;
-    background: #2c3230;
-    border-radius: 4px;
-    border: 1px solid #3a4240;
-    box-shadow:
-        0 3px 0 #1a1e1c,
-        0 4px 6px rgba(0,0,0,0.25);
-    transition: all 0.1s;
+.segment {
+    position: absolute;
+    transform: none;
+    background-color: rgba(255, 255, 255, 0.08);
+    transition: background-color 0.1s, filter 0.1s;
 }
 
-.f-matrix-grid .matrix-cell:active {
-    transform: translateY(1px);
-    box-shadow:
-        0 1px 0 #1a1e1c,
-        0 2px 3px rgba(0,0,0,0.2);
+.segment.on {
+    background-color: #e0f7fa;
+    filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.6));
 }
 
-.f-matrix-grid .matrix-cell.on {
-    background: #2e7d32;
-    border-color: #4CAF50;
-    box-shadow:
-        0 3px 0 #1b5e20,
-        0 0 12px rgba(76,175,80,0.5);
+/* ==========================================
+   横向段: A, D, G (左右两头尖的六边形)
+   ========================================== */
+.segment-a, .segment-d, .segment-g {
+    left: 18%;
+    width: 60%;
+    height: 12%;
+    clip-path: polygon(15% 0, 85% 0, 100% 50%, 85% 100%, 15% 100%, 0 50%);
 }
+.segment-a { top: 6%; }
+.segment-g { top: 44%; }
+.segment-d { top: 82%; }
 
-/* 蜂鸣器 */
-.f-buzzer {
-    display: flex;
-    align-items: center;
+/* ==========================================
+   纵向段: B, C, E, F (上下两头尖的六边形)
+   ========================================== */
+.segment-b, .segment-c, .segment-e, .segment-f {
+    width: 14%;
+    height: 36%;
+    clip-path: polygon(50% 0, 100% 15%, 100% 85%, 50% 100%, 0 85%, 0 15%);
 }
+.segment-f { top: 11%; left: 10%; }
+.segment-b { top: 11%; right: 14%; }
+.segment-e { top: 49%; left: 10%; }
+.segment-c { top: 49%; right: 14%; }
 
-.f-buzzer .buzzer-icon {
-    width: 48px;
-    height: 48px;
-    background: #2c3230;
+/* ==========================================
+   小数点 DP
+   ========================================== */
+.segment-dp {
+    top: 82%;
+    right: 3%;
+    width: 10%;
+    height: 10%;
     border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 20px;
-    border: 2px solid #3a4240;
-    box-shadow:
-        0 4px 0 #1a1e1c,
-        0 6px 10px rgba(0,0,0,0.3);
-    transition: all 0.15s;
-}
-
-.f-buzzer .buzzer-icon.on {
-    background: #c62828;
-    border-color: #f44336;
-    box-shadow:
-        0 4px 0 #b71c1c,
-        0 0 20px rgba(244,67,54,0.6);
-    animation: buzzer-pulse 0.2s infinite;
-}
-
-@keyframes buzzer-pulse {
-    0%, 100% { transform: scale(1); }
-    50% { transform: scale(1.08); }
+    clip-path: none;
 }
 
 /* Logic Analyzer - 波形显示区域 */
@@ -595,53 +461,132 @@
     }
 }
 
-/* 数码管定位 */
-.digit:nth-child(1) { left: 3.508%; top: 1.607%; }
-.digit:nth-child(2) { left: 10.864%; top: 1.607%; }
-.digit:nth-child(3) { left: 18.777%; top: 1.607%; }
-.digit:nth-child(4) { left: 27.417%; top: 1.607%; }
-.digit:nth-child(5) { left: 36.056%; top: 1.607%; }
-.digit:nth-child(6) { left: 43.969%; top: 1.607%; }
-.digit:nth-child(7) { left: 51.882%; top: 1.607%; }
-.digit:nth-child(8) { left: 59.796%; top: 1.607%; }
+/* --- 基于用户 F12 微调的最终坐标 --- */
+/* 数码管区域 */
+.digit:nth-child(1) { left: 11.5%; top: 50%; }
+.digit:nth-child(2) { left: 16.7%; top: 50%; }
+.digit:nth-child(3) { left: 22.1%; top: 50%; }
+.digit:nth-child(4) { left: 27.5%; top: 50%; }
+.digit:nth-child(5) { left: 32.7%; top: 50%; }
+.digit:nth-child(6) { left: 38%; top: 50%; }
+.digit:nth-child(7) { left: 43.5%; top: 50%; }
+.digit:nth-child(8) { left: 48.8%; top: 50%; }
 
-/* LED 定位 */
-.led:nth-child(1) { left: 9.795%; top: 11.528%; }
-.led:nth-child(2) { left: 15.654%; top: 11.528%; }
-.led:nth-child(3) { left: 22.454%; top: 11.583%; }
-.led:nth-child(4) { left: 29.256%; top: 11.556%; }
-.led:nth-child(5) { left: 36.056%; top: 11.583%; }
-.led:nth-child(6) { left: 42.856%; top: 11.556%; }
-.led:nth-child(7) { left: 49.658%; top: 11.583%; }
-.led:nth-child(8) { left: 56.460%; top: 11.556%; }
-.led:nth-child(9) { left: 9.795%; top: 15.657%; }
-.led:nth-child(10) { left: 15.654%; top: 15.657%; }
-.led:nth-child(11) { left: 22.454%; top: 15.685%; }
-.led:nth-child(12) { left: 29.256%; top: 15.657%; }
-.led:nth-child(13) { left: 36.056%; top: 15.739%; }
-.led:nth-child(14) { left: 42.856%; top: 15.713%; }
-.led:nth-child(15) { left: 49.658%; top: 15.713%; }
-.led:nth-child(16) { left: 56.460%; top: 15.685%; }
+/* LED 区域 */
+.led:nth-child(1) { left: 15.5%; top: 63%; }
+.led:nth-child(2) { left: 19.5%; top: 63%; }
+.led:nth-child(3) { left: 23.5%; top: 63%; }
+.led:nth-child(4) { left: 28%; top: 63%; }
+.led:nth-child(5) { left: 32.5%; top: 63%; }
+.led:nth-child(6) { left: 36.5%; top: 63%; }
+.led:nth-child(7) { left: 41%; top: 63%; }
+.led:nth-child(8) { left: 45.5%; top: 63%; }
+.led:nth-child(9) { left: 15.5%; top: 69%; }
+.led:nth-child(10) { left: 19.5%; top: 69%; }
+.led:nth-child(11) { left: 23.5%; top: 69%; }
+.led:nth-child(12) { left: 28%; top: 69%; }
+.led:nth-child(13) { left: 32.5%; top: 69%; }
+.led:nth-child(14) { left: 36.5%; top: 69%; }
+.led:nth-child(15) { left: 41%; top: 69%; }
+.led:nth-child(16) { left: 45.5%; top: 69%; }
 
-/* 拨码开关定位 */
-.switch:nth-child(1) { left: 8.727%; top: 21.586%; }
-.switch:nth-child(2) { left: 15.654%; top: 21.586%; }
-.switch:nth-child(3) { left: 22.454%; top: 21.586%; }
-.switch:nth-child(4) { left: 29.128%; top: 21.586%; }
-.switch:nth-child(5) { left: 36.056%; top: 21.586%; }
-.switch:nth-child(6) { left: 42.856%; top: 21.586%; }
-.switch:nth-child(7) { left: 49.530%; top: 21.586%; }
-.switch:nth-child(8) { left: 56.460%; top: 21.586%; }
-.switch:nth-child(9) { left: 8.727%; top: 29.842%; }
-.switch:nth-child(10) { left: 15.654%; top: 29.842%; }
-.switch:nth-child(11) { left: 22.454%; top: 29.842%; }
-.switch:nth-child(12) { left: 29.128%; top: 29.786%; }
-.switch:nth-child(13) { left: 36.056%; top: 29.786%; }
-.switch:nth-child(14) { left: 42.856%; top: 29.786%; }
-.switch:nth-child(15) { left: 49.530%; top: 29.786%; }
-.switch:nth-child(16) { left: 56.460%; top: 29.786%; }
+/* --- 拨码开关区域 (重置为单行水平绝对定位) --- */
+.switch:nth-child(1) { left: 14.7%; top: 80%; }
+.switch:nth-child(2) { left: 19%; top: 80%; }
+.switch:nth-child(3) { left: 23.3%; top: 80%; }
+.switch:nth-child(4) { left: 27.6%; top: 80%; }
+.switch:nth-child(5) { left: 32%; top: 80%; }
+.switch:nth-child(6) { left: 36.5%; top: 80%; }
+.switch:nth-child(7) { left: 41.3%; top: 80%; }
+.switch:nth-child(8) { left: 45.6%; top: 80%; }
+.switch:nth-child(9) { left: 14.7%; top: 93%; }
+.switch:nth-child(10) { left: 19%; top: 93%; }
+.switch:nth-child(11) { left:23.3%; top: 93%; }
+.switch:nth-child(12) { left: 27.6%; top: 93%; }
+.switch:nth-child(13) { left: 32%; top: 93%; }
+.switch:nth-child(14) { left: 36.5%; top: 93%; }
+.switch:nth-child(15) { left: 41.3%; top: 93%; }
+.switch:nth-child(16) { left: 45.6%; top: 93%; }
 
-/* 独立按键定位 (已修正越界坐标) */
-.f-btn:nth-child(1) { left: 81.8%; top: 27.7%; }
-.f-btn:nth-child(2) { left: 88.4%; top: 27.7%; }
-.f-btn:nth-child(3) { left: 94.9%; top: 27.7%; }
+/* --- 隐藏多余的动态生成部件 --- */
+
+/* 隐藏第9个及以后的数码管 */
+.digit:nth-child(n+9) {
+    display: none !important;
+}
+
+/* 隐藏第17个及以后的LED灯 */
+.led:nth-child(n+17) {
+    display: none !important;
+}
+
+/* 隐藏第17个及以后的拨码开关 */
+.switch:nth-child(n+17) {
+    display: none !important;
+}
+
+/* ============================================
+   蜂鸣器样式 - 扁平轻量风格
+   ============================================ */
+.board-buzzer {
+    width: 6%;
+    aspect-ratio: 1;
+    border-radius: 50%;
+    background: #2a2a2a;
+    box-shadow: inset 1px 1px 2px rgba(0,0,0,0.5);
+    border: 1px solid #555;
+    transition: all 0.1s;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 1.8vw;
+}
+
+.board-buzzer.on {
+    background: #ff3b30;
+    border-color: #cc2211;
+    box-shadow:
+        0 0 8px rgba(255, 59, 48, 0.7),
+        inset 1px 1px 2px rgba(255,255,255,0.3);
+}
+
+/* ============================================
+   独立按键 K1-K6 样式 - 扁平轻量风格
+   ============================================ */
+.board-btn {
+    width: 2.5%;
+    aspect-ratio: 1;
+    border-radius: 50%;
+    background: #e0e0d0;
+    box-shadow:
+        inset 1px 1px 2px rgba(0,0,0,0.4),
+        1px 1px 1px rgba(255,255,255,0.2);
+    border: 1px solid #888;
+    transition: all 0.1s;
+}
+
+.board-btn.pressed,
+.board-btn.on {
+    background: #c0c0b0;
+    box-shadow:
+        inset 2px 2px 4px rgba(0,0,0,0.6),
+        1px 1px 1px rgba(255,255,255,0.2);
+}
+
+/* ============================================
+   蜂鸣器定位 (基于 Figma 坐标换算)
+   ============================================ */
+.board-buzzer:nth-child(1) {
+    left: 65%;  /* 初始位置放到右上方 */
+    top: 41%;
+}
+
+/* K1-K3 (第一行) - 初始位置放到 LED 右侧 */
+.board-btn:nth-child(1) { left: 62%; top: 87%; }
+.board-btn:nth-child(2) { left: 66%; top: 87%; }
+.board-btn:nth-child(3) { left: 70%; top: 87%; }
+
+/* K4-K6 (第二行) */
+.board-btn:nth-child(4) { left: 62%; top: 93%; }
+.board-btn:nth-child(5) { left: 66%; top: 93%; }
+.board-btn:nth-child(6) { left: 70%; top: 93%; }

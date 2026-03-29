@@ -4,6 +4,7 @@ const net = require('net');
 const TCP_PORT = 3001;
 const TCP_HOST = '127.0.0.1';
 
+const LARGE_FRAME_HEADER = Buffer.from([0xFF, 0xFE]);
 const FRAME_HEADER = Buffer.from([0xFF, 0xFE, 0xCC, 0xCC, 0xCC, 0xCC]);
 const PAYLOAD_SIZE = 64;
 
@@ -14,60 +15,89 @@ let isCapturing = false;
 let captureInterval = null;
 let loopCounter = 0;
 
-// 生成针对不同部件的模拟波形
-function createMockPacket(seqIndex, pinName) {
-    const seqBuffer = Buffer.alloc(2);
-    seqBuffer.writeUInt16BE(seqIndex);
-    const payload = Buffer.alloc(PAYLOAD_SIZE);
-
-    const nameUpper = typeof pinName === 'string' ? pinName.toUpperCase() : '';
-
-    if (nameUpper.includes('BTN')) {
-        // 按键模拟：按下2秒，松开2秒
-        const isPressed = (loopCounter % 20) < 10; 
-        payload.fill(isPressed ? 0xFF : 0x00);
-    } 
-    else if (nameUpper.includes('LED')) {
-        // LED模拟：跑马灯效果，根据引脚序号错开闪烁
-        // 从 "LED5" 提取出数字 5
-        const ledId = parseInt(nameUpper.replace('LED', '')) || 0;
-        const isOn = ((loopCounter + ledId) % 10) < 5;
-        payload.fill(isOn ? 0xFF : 0x00);
-    } 
-    else if (nameUpper.includes('SW')) {
-        // 开关模拟：固定状态，奇数开，偶数关，偶尔整体翻转
-        const swId = parseInt(nameUpper.replace('SW', '')) || 0;
-        const globalFlip = (Math.floor(loopCounter / 30) % 2) === 0;
-        const isOn = globalFlip ? (swId % 2 === 0) : (swId % 2 !== 0);
-        payload.fill(isOn ? 0xFF : 0x00);
-    } 
-    else if (nameUpper.includes('DIGIT')) {
-        // 数码管模拟：亮灭交替效果
-        const isOn = (loopCounter % 10) < 5;
-        payload.fill(isOn ? 0xFF : 0x00);
-    } 
-    else {
-        // 默认模拟波形：前一半低电平，后一半高电平
-        payload.fill(0x00, 0, 32);
-        payload.fill(0xFF, 32, 64);
-    }
-
-    return Buffer.concat([FRAME_HEADER, seqBuffer, payload]);
-}
-
 function startCapture() {
     if (isCapturing || requestedPins.length === 0) return;
 
     isCapturing = true;
     console.log(`\n▶️ 开始采集 ${requestedPins.length} 个引脚...`);
-    
-    // 每 200 毫秒生成并发送一轮完整的数据包
+
     captureInterval = setInterval(() => {
         loopCounter++;
-        for (let i = 0; i < requestedPins.length; i++) {
-            const packet = createMockPacket(i, requestedPins[i]);
-            client.write(packet);
+        const seqBuffer = Buffer.alloc(2);
+        seqBuffer.writeUInt16BE(loopCounter % 65536);
+
+        const payload = Buffer.alloc(PAYLOAD_SIZE);
+
+        for (let i = 0; i < requestedPins.length && i < 64; i++) {
+            const pinName = requestedPins[i];
+            const nameUpper = pinName.toUpperCase();
+            let pinValue = 0;
+
+            if (nameUpper.includes('LED')) {
+                const ledId = parseInt(nameUpper.replace('LED', '')) || 0;
+                const isOn = (loopCounter % 16) === ledId;
+                pinValue = isOn ? 0xFF : 0x00;
+            }
+            else if (nameUpper.includes('BTN')) {
+                const isPressed = (loopCounter % 20) < 10;
+                pinValue = isPressed ? 0xFF : 0x00;
+            }
+            else if (nameUpper.includes('SW')) {
+                const swId = parseInt(nameUpper.replace('SW', '')) || 0;
+                const isOn = (swId % 2 === 0);
+                pinValue = isOn ? 0xFF : 0x00;
+            }
+            else if (nameUpper.includes('SEG') || nameUpper.includes('DIG')) {
+                pinValue = (loopCounter % 10) < 5 ? 0xFF : 0x00;
+            }
+            else if (nameUpper.includes('BUZZER')) {
+                pinValue = loopCounter % 2 === 0 ? 0xFF : 0x00;
+            }
+            else {
+                pinValue = 0x00;
+            }
+
+            payload.writeUInt8(pinValue, i);
         }
+
+        const subFrame = Buffer.concat([FRAME_HEADER, seqBuffer, payload]);
+
+        const totalLength = 10 + subFrame.length * requestedPins.length;
+        const largeHeader = Buffer.alloc(10);
+        LARGE_FRAME_HEADER.copy(largeHeader, 0);
+        largeHeader.writeUInt16BE(totalLength, 2);
+        largeHeader.writeUInt16BE(requestedPins.length, 4);
+        largeHeader.writeUInt32BE(0x000000CC, 6);
+
+        const frames = [];
+        frames.push(largeHeader);
+        for (let i = 0; i < requestedPins.length && i < 64; i++) {
+            const seqBuf = Buffer.alloc(2);
+            seqBuf.writeUInt16BE(i);
+            const pld = Buffer.alloc(PAYLOAD_SIZE);
+            const pinName = requestedPins[i];
+            const nameUpper = pinName.toUpperCase();
+
+            let pv = 0;
+            if (nameUpper.includes('LED')) {
+                const lid = parseInt(nameUpper.replace('LED', '')) || 0;
+                pv = (loopCounter % 16) === lid ? 0xFF : 0x00;
+            } else if (nameUpper.includes('SW')) {
+                const sid = parseInt(nameUpper.replace('SW', '')) || 0;
+                pv = (sid % 2 === 0) ? 0xFF : 0x00;
+            } else if (nameUpper.includes('BTN')) {
+                pv = (loopCounter % 20) < 10 ? 0xFF : 0x00;
+            } else if (nameUpper.includes('SEG') || nameUpper.includes('DIG')) {
+                pv = (loopCounter % 10) < 5 ? 0xFF : 0x00;
+            } else if (nameUpper.includes('BUZZER')) {
+                pv = loopCounter % 2 === 0 ? 0xFF : 0x00;
+            }
+            pld.writeUInt8(pv, 0);
+
+            frames.push(Buffer.concat([FRAME_HEADER, seqBuf, pld]));
+        }
+
+        client.write(Buffer.concat(frames));
     }, 200);
 }
 
@@ -83,41 +113,130 @@ function stopCapture() {
 
 let dataBuffer = '';
 
+function sendLargePacket(seq) {
+    const packetCount = requestedPins.length;
+    const subFrameSize = 72;
+    const totalLength = 10 + packetCount * subFrameSize;
+
+    const largeHeader = Buffer.alloc(10);
+    LARGE_FRAME_HEADER.copy(largeHeader, 0);
+    largeHeader.writeUInt16BE(totalLength, 2);
+    largeHeader.writeUInt16BE(packetCount, 4);
+    largeHeader.writeUInt32BE(0x000000CC, 6);
+
+    const subFrames = [];
+    for (let i = 0; i < packetCount; i++) {
+        const seqBuf = Buffer.alloc(2);
+        seqBuf.writeUInt16BE(i);
+
+        const payload = Buffer.alloc(PAYLOAD_SIZE);
+        const pinName = requestedPins[i];
+        const nameUpper = pinName.toUpperCase();
+
+        let pv = 0;
+        if (nameUpper.includes('LED')) {
+            const ledId = parseInt(nameUpper.replace('LED', '')) || 0;
+            pv = (seq % 16) === ledId ? 0xFF : 0x00;
+        } else if (nameUpper.includes('SW')) {
+            const swId = parseInt(nameUpper.replace('SW', '')) || 0;
+            pv = (swId % 2 === 0) ? 0xFF : 0x00;
+        } else if (nameUpper.includes('BTN')) {
+            pv = (seq % 20) < 10 ? 0xFF : 0x00;
+        } else if (nameUpper.includes('SEG') || nameUpper.includes('DIG')) {
+            pv = (seq % 10) < 5 ? 0xFF : 0x00;
+        } else if (nameUpper.includes('BUZZER')) {
+            pv = seq % 2 === 0 ? 0xFF : 0x00;
+        }
+        payload.writeUInt8(pv, 0);
+
+        subFrames.push(Buffer.concat([FRAME_HEADER, seqBuf, payload]));
+    }
+
+    return Buffer.concat([largeHeader, ...subFrames]);
+}
+
+let captureSeq = 0;
+let captureTimer = null;
+
+function startCaptureV2() {
+    if (isCapturing || requestedPins.length === 0) return;
+    isCapturing = true;
+    console.log(`\n▶️ 开始采集 ${requestedPins.length} 个引脚 (大包模式)...`);
+
+    captureTimer = setInterval(() => {
+        const packet = sendLargePacket(captureSeq++);
+        client.write(packet);
+    }, 200);
+}
+
 client.connect(TCP_PORT, TCP_HOST, () => {
     console.log(`✅ 已连接到服务器 ${TCP_HOST}:${TCP_PORT}`);
-    
-    // 连接后先发送注册包
-    const registerMsg = JSON.stringify({
-        type: 'register',
-        deviceId: 'demo_device'
-    });
-    client.write(registerMsg + '\n');
+
+    const regPacket = Buffer.from([0xFF, 0xFE, 0xCC, 0xCC, 0x00, 0x11, 0x22, 0x33]);
+    client.write(regPacket);
     console.log('📝 已发送设备注册信息，等待网页端下发采集指令...');
 });
 
 client.on('data', (data) => {
-    dataBuffer += data.toString();
+    dataBuffer = Buffer.concat([dataBuffer, data]);
 
-    let newlineIndex;
-    while ((newlineIndex = dataBuffer.indexOf('\n')) !== -1) {
-        const line = dataBuffer.slice(0, newlineIndex);
-        dataBuffer = dataBuffer.slice(newlineIndex + 1);
-
-        if (line.trim()) {
-            try {
-                const command = JSON.parse(line);
-                if (command.action === 'start_capture' && command.requestedPins) {
-                    requestedPins = command.requestedPins;
-                    startCapture();
-                } else if (command.action === 'stop_capture') {
-                    stopCapture();
+    while (dataBuffer.length >= 2) {
+        if (dataBuffer[0] === 0xFF && dataBuffer[1] === 0xFE) {
+            if (dataBuffer.length >= 8) {
+                const ackCheck = dataBuffer.readUInt32BE(4);
+                if (ackCheck === 0x00000001) {
+                    console.log('[INFO] 收到注册 ACK');
+                    dataBuffer = dataBuffer.slice(8);
+                    continue;
                 }
-            } catch (e) {
-                console.warn('⚠️ 解析指令失败:', e.message);
             }
+
+            if (dataBuffer.length >= 4 && dataBuffer[0] === 0xFF && dataBuffer[1] === 0xCC && dataBuffer[2] === 0xFF && dataBuffer[3] === 0xCC) {
+                dataBuffer = dataBuffer.slice(4);
+                continue;
+            }
+
+            if (dataBuffer.length >= 24) {
+                const cmd = parseCommand(dataBuffer);
+                if (cmd) {
+                    console.log(`[INFO] 收到指令: 包数量=${cmd.packetCount}`);
+                    if (cmd.packetCount > 0) {
+                        stopCapture();
+                        requestedPins = [];
+                        const count = cmd.packetCount;
+                        for (let i = 0; i < count; i++) {
+                            if (i < 16) requestedPins.push(`LED${i}`);
+                            else if (i < 32) requestedPins.push(`SW${i - 16}`);
+                            else if (i < 39) requestedPins.push(`SEG_${String.fromCharCode(65 + i - 33)}`);
+                            else if (i < 47) requestedPins.push(`DIG${i - 39}`);
+                            else if (i < 53) requestedPins.push(`BTN${i - 47}`);
+                            else if (i === 53) requestedPins.push('BUZZER');
+                        }
+                        startCaptureV2();
+                    }
+                    dataBuffer = dataBuffer.slice(24);
+                    continue;
+                }
+            }
+
+            if (dataBuffer.length < 24) break;
+        }
+
+        if (dataBuffer.length > 2) {
+            dataBuffer = dataBuffer.slice(1);
+        } else {
+            break;
         }
     }
 });
+
+function parseCommand(buffer) {
+    if (buffer.length < 24) return null;
+    const frameHeader = buffer.readUInt16BE(0);
+    if (frameHeader !== 0xFFFE) return null;
+    const packetCount = buffer.readUInt16BE(10);
+    return { packetCount };
+}
 
 client.on('error', (err) => console.error('❌ 连接错误:', err.message));
 client.on('close', () => {
