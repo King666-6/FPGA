@@ -193,7 +193,7 @@ router.get('/submissions', authenticate, authorize(['teacher', 'admin']), async 
             LEFT JOIN experiments e ON es.experiment_id = e.id
             JOIN users u ON es.student_id = u.id
             JOIN devices d ON es.device_id = d.id
-            WHERE e.teacher_id = ?
+            WHERE (e.teacher_id = ? OR es.experiment_id IS NULL)
               ${timeCondition}
               ${studentIdFilter}
             ORDER BY es.started_at DESC
@@ -218,16 +218,16 @@ router.get('/submissions/active', authenticate, authorize(['teacher', 'admin']),
         const pool = db.getPool();
         const [submissions] = await pool.execute(`
             SELECT es.*,
-                   e.experiment_name,
+                   COALESCE(e.experiment_name, '自由采集') as experiment_name,
                    u.real_name as student_name,
                    u.student_number,
                    d.device_id
             FROM experiment_submissions es
-            JOIN experiments e ON es.experiment_id = e.id
+            LEFT JOIN experiments e ON es.experiment_id = e.id
             JOIN users u ON es.student_id = u.id
             JOIN devices d ON es.device_id = d.id
             WHERE es.status = 'in_progress'
-              AND e.teacher_id = ?
+              AND (e.teacher_id = ? OR es.experiment_id IS NULL)
             ORDER BY es.started_at DESC
         `, [req.user.id]);
 
@@ -256,7 +256,7 @@ router.get('/submissions/:submissionId', authenticate, async (req, res) => {
                     u.real_name as student_name, u.username as student_username,
                     d.device_id, d.name as device_name
              FROM experiment_submissions es
-             JOIN experiments e ON es.experiment_id = e.id
+             LEFT JOIN experiments e ON es.experiment_id = e.id
              JOIN users u ON es.student_id = u.id
              JOIN devices d ON es.device_id = d.id
              WHERE es.id = ?`,
@@ -279,11 +279,18 @@ router.get('/submissions/:submissionId', authenticate, async (req, res) => {
             });
         }
 
-        if (req.user.role === 'teacher' && submission.teacher_id !== req.user.id) {
-            return res.status(403).json({
-                success: false,
-                error: '没有权限查看此提交记录'
-            });
+        // 对于教师，需要检查权限：如果 experiment_id 不为 NULL，则检查 teacher_id
+        if (req.user.role === 'teacher') {
+            // 如果 experiment_id 为 NULL（自由采集），教师可能没有权限查看
+            // 这里可以根据需要调整策略
+            // 目前，如果 experiment_id 不为 NULL，检查 teacher_id 是否匹配
+            if (submission.experiment_id !== null && submission.teacher_id !== req.user.id) {
+                return res.status(403).json({
+                    success: false,
+                    error: '没有权限查看此提交记录'
+                });
+            }
+            // 如果 experiment_id 为 NULL，允许教师查看（或者可以根据其他策略限制）
         }
 
         const data = await DataRecord.getSubmissionRecords(submissionId);
