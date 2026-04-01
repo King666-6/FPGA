@@ -325,7 +325,7 @@ router.get('/submissions/:submissionId/analysis', authenticate, async (req, res)
         const [submissions] = await pool.execute(
             `SELECT es.*, e.teacher_id, es.student_id
              FROM experiment_submissions es
-             JOIN experiments e ON es.experiment_id = e.id
+             LEFT JOIN experiments e ON es.experiment_id = e.id
              WHERE es.id = ?`,
             [submissionId]
         );
@@ -346,11 +346,15 @@ router.get('/submissions/:submissionId/analysis', authenticate, async (req, res)
             });
         }
 
-        if (req.user.role === 'teacher' && submission.teacher_id !== req.user.id) {
-            return res.status(403).json({
-                success: false,
-                error: '没有权限查看此数据分析'
-            });
+        // 对于教师，如果 experiment_id 不为 NULL，检查 teacher_id
+        if (req.user.role === 'teacher') {
+            if (submission.experiment_id !== null && submission.teacher_id !== req.user.id) {
+                return res.status(403).json({
+                    success: false,
+                    error: '没有权限查看此数据分析'
+                });
+            }
+            // 如果 experiment_id 为 NULL（自由采集），允许教师查看
         }
 
         const analysis = await DataRecord.getDataAnalysis(submissionId);
@@ -379,7 +383,7 @@ router.get('/submissions/:submissionId/export', authenticate, async (req, res) =
         const [submissions] = await pool.execute(
             `SELECT es.*, e.teacher_id, es.student_id
              FROM experiment_submissions es
-             JOIN experiments e ON es.experiment_id = e.id
+             LEFT JOIN experiments e ON es.experiment_id = e.id
              WHERE es.id = ?`,
             [submissionId]
         );
@@ -400,11 +404,15 @@ router.get('/submissions/:submissionId/export', authenticate, async (req, res) =
             });
         }
 
-        if (req.user.role === 'teacher' && submission.teacher_id !== req.user.id) {
-            return res.status(403).json({
-                success: false,
-                error: '没有权限导出此数据'
-            });
+        // 对于教师，如果 experiment_id 不为 NULL，检查 teacher_id
+        if (req.user.role === 'teacher') {
+            if (submission.experiment_id !== null && submission.teacher_id !== req.user.id) {
+                return res.status(403).json({
+                    success: false,
+                    error: '没有权限导出此数据'
+                });
+            }
+            // 如果 experiment_id 为 NULL（自由采集），允许教师查看
         }
 
         if (format === 'csv') {
