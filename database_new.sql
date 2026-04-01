@@ -194,7 +194,7 @@ CREATE TABLE experiments (
 CREATE TABLE experiment_submissions (
     id INT PRIMARY KEY AUTO_INCREMENT,
     student_id INT NOT NULL COMMENT '学生ID',
-    experiment_id INT NOT NULL COMMENT '实验ID',
+    experiment_id INT NULL COMMENT '实验ID（自由采集时为NULL）',
     class_id INT NULL COMMENT '班级ID(可选)',
     device_id INT NULL COMMENT '使用的设备ID',
     
@@ -239,7 +239,7 @@ CREATE TABLE experiment_submissions (
     FOREIGN KEY (student_id) REFERENCES users(id) 
         ON DELETE RESTRICT ON UPDATE CASCADE,
     FOREIGN KEY (experiment_id) REFERENCES experiments(id) 
-        ON DELETE RESTRICT ON UPDATE CASCADE,
+        ON DELETE SET NULL ON UPDATE CASCADE,
     FOREIGN KEY (class_id) REFERENCES classes(id) 
         ON DELETE SET NULL ON UPDATE CASCADE,
     FOREIGN KEY (device_id) REFERENCES devices(id) 
