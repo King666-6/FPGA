@@ -462,6 +462,7 @@ router.post('/submissions/create-with-waveform', authenticate, isStudent, async 
             }
         }
 
+        // 注意：experiment_id 字段现在允许为 NULL，因此 finalExperimentId 可以为 null
         const [submissionResult] = await pool.execute(
             `INSERT INTO experiment_submissions
              (student_id, experiment_id, device_id, class_id, status, started_at, submitted_at)

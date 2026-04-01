@@ -649,6 +649,17 @@ UNION ALL
 SELECT '波形数据', COUNT(*) FROM experiment_data;
 
 -- =====================================================
+-- 迁移现有数据库（如果已存在 experiment_submissions 表）
+-- 注意：在生产环境中，请先备份数据再执行以下语句
+-- =====================================================
+-- ALTER TABLE experiment_submissions
+--     MODIFY COLUMN experiment_id INT NULL COMMENT '实验ID（自由采集时为NULL）',
+--     DROP FOREIGN KEY experiment_submissions_ibfk_2,  -- 需要根据实际外键名称调整
+--     ADD CONSTRAINT fk_submission_experiment
+--         FOREIGN KEY (experiment_id) REFERENCES experiments(id)
+--         ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- =====================================================
 -- 完成提示
 -- =====================================================
 SELECT '✅ 数据库初始化完成!' as message;
