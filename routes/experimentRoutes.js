@@ -283,7 +283,6 @@ router.get('/submissions/:submissionId', authenticate, async (req, res) => {
         if (req.user.role === 'teacher') {
             // 如果 experiment_id 为 NULL（自由采集），教师可能没有权限查看
             // 这里可以根据需要调整策略
-            // 目前，如果 experiment_id 不为 NULL，检查 teacher_id 是否匹配
             // 修改为：只有当 teacher_id 存在且不等于当前教师时才拒绝
             if (submission.teacher_id && submission.teacher_id !== req.user.id) {
                 return res.status(403).json({
