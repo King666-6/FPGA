@@ -1,254 +1,282 @@
 const net = require('net');
+const { PIN_NAME_TO_ID } = require('../utils/pinConfig');
 
-const TCP_HOST = '127.0.0.1';
 const TCP_PORT = 3001;
+const TCP_HOST = '127.0.0.1';
 
 const LARGE_FRAME_HEADER = Buffer.from([0xFF, 0xFE]);
 const FRAME_HEADER = Buffer.from([0xFF, 0xFE, 0xCC, 0xCC, 0xCC, 0xCC]);
-
-const SEGMENT_PATTERNS = [
-    0x3F,
-    0x06,
-    0x5B,
-    0x4F,
-    0x66,
-    0x6D,
-    0x7D,
-    0x07,
-    0x7F,
-    0x6F
-];
-
-let client = null;
-let heartbeatInterval = null;
-let sendTimer = null;
-let deviceNumber = 0x000000CC;
-let packetCounter = 0;
-let globalCounter = 0;
-
-const PIN_COUNT = 54;
 const PAYLOAD_SIZE = 64;
 
-function calculateChecksum(buffer, length) {
-    let sum = 0;
-    for (let i = 0; i < length; i++) {
-        sum += buffer[i];
+const SEGMENT_MAP = {
+    0: { a: 1, b: 1, c: 1, d: 1, e: 1, f: 1, g: 0 },
+    1: { a: 0, b: 1, c: 1, d: 0, e: 0, f: 0, g: 0 },
+    2: { a: 1, b: 1, c: 0, d: 1, e: 1, f: 0, g: 1 },
+    3: { a: 1, b: 1, c: 1, d: 1, e: 0, f: 0, g: 1 },
+    4: { a: 0, b: 1, c: 1, d: 0, e: 0, f: 1, g: 1 },
+    5: { a: 1, b: 0, c: 1, d: 1, e: 0, f: 1, g: 1 },
+    6: { a: 1, b: 0, c: 1, d: 1, e: 1, f: 1, g: 1 },
+    7: { a: 1, b: 1, c: 1, d: 0, e: 0, f: 0, g: 0 },
+    8: { a: 1, b: 1, c: 1, d: 1, e: 1, f: 1, g: 1 },
+    9: { a: 1, b: 1, c: 1, d: 1, e: 0, f: 1, g: 1 }
+};
+
+const client = new net.Socket();
+
+let requestedPins = [];
+let isCapturing = false;
+let captureInterval = null;
+
+let counter = 0;
+let ledPattern = 0;
+let swPattern = 0;
+let buzzerOn = false;
+let scanIndex = 0;
+
+let btnStates = [false, false, false, false, false, false];
+let btnTimers = [
+    { period: 1200, pressed: 300 },
+    { period: 800, pressed: 200 },
+    { period: 1500, pressed: 400 },
+    { period: 2000, pressed: 500 },
+    { period: 1000, pressed: 250 },
+    { period: 1800, pressed: 450 }
+];
+let btnElapsed = [0, 0, 0, 0, 0, 0];
+
+let lastUpdateTime = Date.now();
+let lastCounterUpdate = Date.now();
+let lastSwUpdate = Date.now();
+let lastBuzzerUpdate = Date.now();
+
+function updateSimulationState() {
+    const now = Date.now();
+    const dt = now - lastUpdateTime;
+    lastUpdateTime = now;
+
+    if (now - lastCounterUpdate >= 500) {
+        counter = (counter + 1) % 100;
+        lastCounterUpdate = now;
     }
-    return sum & 0xFFFFFFFF;
+
+    scanIndex = (scanIndex + 1) % 2;
+
+    ledPattern = (ledPattern + 1) % 16;
+
+    if (now - lastSwUpdate >= 2000) {
+        swPattern = swPattern === 0xAAAA ? 0x5555 : 0xAAAA;
+        lastSwUpdate = now;
+    }
+
+    for (let i = 0; i < 6; i++) {
+        btnElapsed[i] += dt;
+        if (btnElapsed[i] >= btnTimers[i].period) {
+            btnElapsed[i] = 0;
+        }
+        btnStates[i] = btnElapsed[i] < btnTimers[i].pressed;
+    }
+
+    buzzerOn = (counter % 15) < 3;
 }
 
-function parseCommand(buffer) {
-    if (buffer.length < 24) {
-        return null;
+function getPinValue(pinName) {
+    const name = pinName.toUpperCase();
+
+    if (name.startsWith('LED')) {
+        const ledId = parseInt(name.replace('LED', '')) || 0;
+        return (ledPattern === ledId) ? 0xFF : 0x00;
     }
 
-    const frameHeader = buffer.readUInt16BE(0);
-    if (frameHeader !== 0xFFFE) {
-        return null;
+    if (name.startsWith('SW')) {
+        const swId = parseInt(name.replace('SW', '')) || 0;
+        return (swPattern & (1 << swId)) ? 0xFF : 0x00;
     }
 
-    const clockSelect = buffer.readUInt16BE(2);
-    deviceNumber = buffer.readUInt32BE(4);
-    const triggerCondition = buffer.readUInt16BE(8);
-    const packetCount = buffer.readUInt16BE(10);
+    if (name.startsWith('BTN')) {
+        const btnId = parseInt(name.replace('BTN', '')) || 0;
+        return btnStates[btnId] ? 0xFF : 0x00;
+    }
 
-    return {
-        clockSelect,
-        deviceNumber,
-        triggerCondition,
-        packetCount
-    };
+    if (name.startsWith('BUZZER')) {
+        return buzzerOn ? 0xFF : 0x00;
+    }
+
+    if (name.startsWith('SEG_') || name.startsWith('DIGIT_')) {
+        const digitValue = scanIndex === 0 ? counter % 10 : Math.floor(counter / 10);
+        const segmentMap = SEGMENT_MAP[digitValue];
+
+        if (name === 'SEG_A') return segmentMap.a ? 0xFF : 0x00;
+        if (name === 'SEG_B') return segmentMap.b ? 0xFF : 0x00;
+        if (name === 'SEG_C') return segmentMap.c ? 0xFF : 0x00;
+        if (name === 'SEG_D') return segmentMap.d ? 0xFF : 0x00;
+        if (name === 'SEG_E') return segmentMap.e ? 0xFF : 0x00;
+        if (name === 'SEG_F') return segmentMap.f ? 0xFF : 0x00;
+        if (name === 'SEG_G') return segmentMap.g ? 0xFF : 0x00;
+    }
+
+    if (name.startsWith('DIG')) {
+        const digId = parseInt(name.replace('DIG', '')) || 0;
+        if (digId === scanIndex) {
+            return 0xFF;
+        }
+        return 0x00;
+    }
+
+    return 0x00;
 }
 
-function createLargePacket(seq, packetCount) {
-    const totalLength = 10 + packetCount * 72;
+function buildPinMapping(packetCount) {
+    const pins = [];
+    for (let i = 0; i < packetCount; i++) {
+        if (i < 16) pins.push(`LED${i}`);
+        else if (i < 32) pins.push(`SW${i - 16}`);
+        else if (i < 39) pins.push(`SEG_${String.fromCharCode(65 + i - 33)}`);
+        else if (i < 47) pins.push(`DIG${i - 39}`);
+        else if (i < 53) pins.push(`BTN${i - 47}`);
+        else if (i === 53) pins.push('BUZZER');
+    }
+    return pins;
+}
+
+function sendLargePacket(seq) {
+    const packetCount = requestedPins.length;
+    const subFrameSize = 72;
+    const totalLength = 10 + packetCount * subFrameSize;
 
     const largeHeader = Buffer.alloc(10);
     LARGE_FRAME_HEADER.copy(largeHeader, 0);
     largeHeader.writeUInt16BE(totalLength, 2);
     largeHeader.writeUInt16BE(packetCount, 4);
-    largeHeader.writeUInt32BE(deviceNumber, 6);
+    largeHeader.writeUInt32BE(0x000000CC, 6);
 
     const subFrames = [];
-    for (let subSeq = 0; subSeq < packetCount; subSeq++) {
-        const seqBuffer = Buffer.alloc(2);
-        seqBuffer.writeUInt16BE(subSeq);
+    for (let i = 0; i < packetCount; i++) {
+        const seqBuf = Buffer.alloc(2);
+        seqBuf.writeUInt16BE(i);
 
         const payload = Buffer.alloc(PAYLOAD_SIZE);
-        const pinBase = subSeq;
+        const pinValue = getPinValue(requestedPins[i]);
+        payload.writeUInt8(pinValue, 0);
 
-        globalCounter++;
-        const counter = globalCounter;
-
-        if (pinBase >= 0 && pinBase < 16) {
-            const ledIndex = pinBase;
-            const isOn = (counter % 16) === ledIndex;
-            payload.writeUInt8(isOn ? 0xFF : 0x00, 0);
-        }
-        else if (pinBase >= 16 && pinBase < 32) {
-            const swIndex = pinBase - 16;
-            const isOn = (swIndex % 2 === 0);
-            payload.writeUInt8(isOn ? 0xFF : 0x00, 0);
-        }
-        else if (pinBase >= 32 && pinBase < 39) {
-            const segIndex = pinBase - 32;
-            const digitValue = Math.floor(counter / 30) % 10;
-            const pattern = SEGMENT_PATTERNS[digitValue];
-            const isOn = (pattern >> segIndex) & 1;
-            payload.writeUInt8(isOn ? 0xFF : 0x00, 0);
-        }
-        else if (pinBase >= 39 && pinBase < 47) {
-            const digIndex = pinBase - 39;
-            const digitCounter = Math.floor(counter / 30) % 8;
-            const isOn = digIndex === digitCounter;
-            payload.writeUInt8(isOn ? 0xFF : 0x00, 0);
-        }
-        else if (pinBase >= 47 && pinBase < 53) {
-            const btnIndex = pinBase - 47;
-            const pressPeriod = 100;
-            const holdDuration = 5;
-            const phase = counter % pressPeriod;
-            const isPressed = phase < holdDuration;
-            const pressedBtn = Math.floor(counter / pressPeriod) % 6;
-            const isOn = btnIndex === pressedBtn && isPressed;
-            payload.writeUInt8(isOn ? 0xFF : 0x00, 0);
-        }
-        else if (pinBase === 53) {
-            const isOn = counter % 2 === 0;
-            payload.writeUInt8(isOn ? 0xFF : 0x00, 0);
-        }
-        else {
-            payload.writeUInt8(0x00, 0);
-        }
-
-        const subFrame = Buffer.concat([FRAME_HEADER, seqBuffer, payload]);
-        subFrames.push(subFrame);
+        subFrames.push(Buffer.concat([FRAME_HEADER, seqBuf, payload]));
     }
 
     return Buffer.concat([largeHeader, ...subFrames]);
 }
 
-function sendDataFrames(triggerCondition, packetCount) {
-    if (sendTimer) {
-        clearInterval(sendTimer);
+function logCurrentState() {
+    const leds = [];
+    for (let i = 0; i < 16; i++) {
+        leds.push(ledPattern === i ? `[LED${i}]` : ` LED${i} `);
     }
 
-    console.log(`[INFO] 触发条件: 0x${triggerCondition.toString(16).toUpperCase().padStart(4, '0')}`);
-    console.log(`[INFO] 包数量: ${packetCount}`);
-    console.log(`[INFO] 大包模式: ${packetCount} 个子帧`);
+    const sws = [];
+    for (let i = 0; i < 16; i++) {
+        sws.push((swPattern & (1 << i)) ? '1' : '0');
+    }
 
-    sendTimer = setInterval(() => {
-        const packet = createLargePacket(0, packetCount);
+    const btns = btnStates.map((s, i) => s ? `BTN${i}:1` : `BTN${i}:0`).join(' ');
+
+    const tens = Math.floor(counter / 10);
+    const ones = counter % 10;
+
+    console.log(`\n[FPGA2 State] counter=${counter.toString().padStart(2, '0')} (${tens}|${ones}) | LEDs=[${leds.join('')}] | SWs=${sws.join('')} | BTNs=${btns} | BUZZER=${buzzerOn ? 'ON' : 'OFF '}`);
+}
+
+function startCapture() {
+    if (isCapturing || requestedPins.length === 0) return;
+
+    isCapturing = true;
+    console.log(`\n[FPGA2] Starting capture: ${requestedPins.length} pins`);
+
+    let captureSeq = 0;
+    captureInterval = setInterval(() => {
+        updateSimulationState();
+
+        const packet = sendLargePacket(captureSeq++);
         client.write(packet);
+
+        logCurrentState();
     }, 200);
 }
 
-function startHeartbeat() {
-    if (heartbeatInterval) {
-        clearInterval(heartbeatInterval);
+function stopCapture() {
+    if (!isCapturing) return;
+    isCapturing = false;
+    if (captureInterval) {
+        clearInterval(captureInterval);
+        captureInterval = null;
     }
-
-    heartbeatInterval = setInterval(() => {
-        if (client && !client.destroyed) {
-            const hb = Buffer.from([0xFF, 0xCC, 0xFF, 0xCC]);
-            client.write(hb);
-        }
-    }, 5000);
+    console.log('[FPGA2] Capture stopped');
 }
 
-let commandBuffer = Buffer.alloc(0);
+let dataBuffer = Buffer.alloc(0);
 
-function handleIncomingData(data) {
-    try {
-        commandBuffer = Buffer.concat([commandBuffer, data]);
+function parseCommand(buffer) {
+    if (buffer.length < 24) return null;
+    const frameHeader = buffer.readUInt16BE(0);
+    if (frameHeader !== 0xFFFE) return null;
+    const packetCount = buffer.readUInt16BE(10);
+    return { packetCount };
+}
 
-        while (commandBuffer.length >= 2) {
-            if (commandBuffer[0] === 0xFF && commandBuffer[1] === 0xFE) {
-                if (commandBuffer.length >= 8) {
-                    const ackCheck = commandBuffer.readUInt32BE(4);
-                    if (ackCheck === 0x00000001) {
-                        console.log(`[INFO] 收到注册 ACK`);
-                        commandBuffer = commandBuffer.slice(8);
-                        continue;
-                    }
-                }
+client.connect(TCP_PORT, TCP_HOST, () => {
+    console.log(`[FPGA2] Connected to ${TCP_HOST}:${TCP_PORT}`);
 
-                if (commandBuffer.length >= 4 &&
-                    commandBuffer[0] === 0xFF && commandBuffer[1] === 0xCC &&
-                    commandBuffer[2] === 0xFF && commandBuffer[3] === 0xCC) {
-                    commandBuffer = commandBuffer.slice(4);
+    const regPacket = Buffer.from([0xFF, 0xFE, 0xCC, 0xCC, 0x00, 0x11, 0x22, 0x33]);
+    client.write(regPacket);
+    console.log('[FPGA2] Registration packet sent, waiting for capture command...');
+});
+
+client.on('data', (data) => {
+    dataBuffer = Buffer.concat([dataBuffer, data]);
+
+    while (dataBuffer.length >= 2) {
+        if (dataBuffer[0] === 0xFF && dataBuffer[1] === 0xFE) {
+            if (dataBuffer.length >= 8) {
+                const ackCheck = dataBuffer.readUInt32BE(4);
+                if (ackCheck === 0x00000001) {
+                    console.log('[FPGA2] Received registration ACK');
+                    dataBuffer = dataBuffer.slice(8);
                     continue;
                 }
+            }
 
-                if (commandBuffer.length >= 24) {
-                    const cmd = parseCommand(commandBuffer);
+            if (dataBuffer.length >= 4 && dataBuffer[0] === 0xFF && dataBuffer[1] === 0xCC && dataBuffer[2] === 0xFF && dataBuffer[3] === 0xCC) {
+                dataBuffer = dataBuffer.slice(4);
+                continue;
+            }
 
-                    if (cmd) {
-                        console.log(`[INFO] 解析指令: 触发条件=0x${cmd.triggerCondition.toString(16).toUpperCase()}, 包数量=${cmd.packetCount}`);
-
-                        if (cmd.packetCount > 0) {
-                            sendDataFrames(cmd.triggerCondition, cmd.packetCount);
-                        }
-
-                        commandBuffer = commandBuffer.slice(24);
-                        continue;
+            if (dataBuffer.length >= 24) {
+                const cmd = parseCommand(dataBuffer);
+                if (cmd) {
+                    console.log(`[FPGA2] Received command: packetCount=${cmd.packetCount}`);
+                    if (cmd.packetCount > 0) {
+                        stopCapture();
+                        requestedPins = buildPinMapping(cmd.packetCount);
+                        startCapture();
                     }
-                }
-
-                if (commandBuffer.length < 24) {
-                    break;
+                    dataBuffer = dataBuffer.slice(24);
+                    continue;
                 }
             }
 
-            if (commandBuffer.length > 2) {
-                commandBuffer = commandBuffer.slice(1);
-            } else {
-                break;
-            }
+            if (dataBuffer.length < 24) break;
         }
 
-        if (commandBuffer.length > 100) {
-            commandBuffer = commandBuffer.slice(-24);
+        if (dataBuffer.length > 2) {
+            dataBuffer = dataBuffer.slice(1);
+        } else {
+            break;
         }
-    } catch (err) {
-        console.error(`[ERROR] 处理接收数据异常: ${err.message}`);
-        commandBuffer = Buffer.alloc(0);
     }
-}
+});
 
-function connect() {
-    client = new net.Socket();
+client.on('error', (err) => console.error('[FPGA2] Connection error:', err.message));
+client.on('close', () => {
+    console.log('[FPGA2] Connection closed');
+    stopCapture();
+});
 
-    client.connect(TCP_PORT, TCP_HOST, () => {
-        console.log(`[INFO] 已连接到服务器 ${TCP_HOST}:${TCP_PORT}`);
-
-        const regPacket = Buffer.from([0xFF, 0xFE, 0xCC, 0xCC, 0x00, 0x11, 0x22, 0x33]);
-        client.write(regPacket);
-        console.log(`[INFO] 已发送注册包`);
-
-        startHeartbeat();
-    });
-
-    client.on('data', (data) => {
-        handleIncomingData(data);
-    });
-
-    client.on('error', (err) => {
-        console.error(`[ERROR] 连接错误: ${err.message}`);
-    });
-
-    client.on('close', () => {
-        console.log('[INFO] 连接已关闭');
-        if (heartbeatInterval) {
-            clearInterval(heartbeatInterval);
-            heartbeatInterval = null;
-        }
-        if (sendTimer) {
-            clearInterval(sendTimer);
-            sendTimer = null;
-        }
-        setTimeout(connect, 3000);
-    });
-}
-
-connect();
+console.log('[FPGA2] FPGA2 simulator starting...');
+console.log('[FPGA2] Features: 7-segment display counter, LED water flow, alternating switches, rhythmic buttons, buzzer');

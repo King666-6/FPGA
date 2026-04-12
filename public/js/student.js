@@ -312,6 +312,7 @@ class StudentDashboard {
         this.boundDeviceId = null;
         this.selectedExperiment = null;
         this.activeCapturePins = null;
+        this.currentSubmissionId = null;
         this.experiments = [];
 
         this.initUI();
@@ -580,7 +581,7 @@ class StudentDashboard {
         this.applyPanelFilter(pins);
 
         this.socket.emit('start_capture', {
-            deviceId: this.boundDeviceId || 'demo_device',
+            deviceId: this.boundDeviceId || 'FPGA_device',
             requestedPins: pins
         });
 
@@ -628,7 +629,7 @@ class StudentDashboard {
             this.updateConnectionStatus('connected');
             this.updateButtonStates();
 
-            this.socket.emit('bind_device', { deviceId: 'demo_device' });
+            this.socket.emit('bind_device', { deviceId: 'FPGA_device' });
             console.log('发送 bind_device 事件');
             this.loadExperiments();
         });
@@ -705,9 +706,11 @@ class StudentDashboard {
         this.applyPanelFilter(requestedPins);
 
         this.socket.emit('start_capture', {
-            deviceId: this.boundDeviceId || 'demo_device',
+            deviceId: this.boundDeviceId || 'FPGA_device',
             requestedPins: requestedPins,
-            experimentId: experimentId
+            experimentId: experimentId,
+            clockSource: this.selectedExperiment?.sample_clock_source || '50Hz',
+            submissionId: this.currentSubmissionId
         });
 
         this.isCapturing = true;
@@ -721,7 +724,7 @@ class StudentDashboard {
         if (!this.socket || !this.connected) return;
 
         this.socket.emit('stop_capture', {
-            deviceId: this.boundDeviceId || 'demo_device'
+            deviceId: this.boundDeviceId || 'FPGA_device'
         });
 
         console.log('发送 stop_capture 指令');
@@ -788,7 +791,7 @@ class StudentDashboard {
 
         try {
             const payload = {
-                device_id: this.boundDeviceId || 'demo_device',
+                device_id: this.boundDeviceId || 'FPGA_device',
                 experiment_id: this.selectedExperiment?.id || null,
                 class_id: null,
                 pin_mapping: this.recordPinMapping || this.activeCapturePins || [],
@@ -803,6 +806,7 @@ class StudentDashboard {
 
             if (result.success) {
                 alert(`✅ 波形提交成功！\n提交ID: ${result.data.submission_id}`);
+                this.currentSubmissionId = result.data.submission_id;
                 this.recordBuffer = null;
                 this.recordPinMapping = null;
                 submitBtn.hidden = true;
@@ -915,11 +919,6 @@ class StudentDashboard {
             let isActive = true;
             let isEnabled = true;
 
-            if (activePins !== null) {
-                isActive = activePins.includes(pinName);
-                isEnabled = isActive;
-            }
-
             const label = document.createElement('label');
             label.className = 'filter-label' + (isActive ? ' checked' : '');
             if (!isEnabled) {
@@ -952,35 +951,7 @@ class StudentDashboard {
     }
 
     applyPanelFilter(activePins) {
-        const sections = document.querySelectorAll('.f-section');
-
-        if (activePins === null) {
-            sections.forEach(section => {
-                section.style.opacity = '1';
-                section.style.pointerEvents = 'auto';
-            });
-            return;
-        }
-
-        const hasLED = activePins.some(pin => pin.startsWith('LED'));
-        const hasSW = activePins.some(pin => pin.startsWith('SW'));
-        const hasBTN = activePins.some(pin => pin.match(/^(BTN|KEY)/i));
-        const hasDIGIT = activePins.some(pin => pin.match(/^(DIGIT|SEG|DIG)/i));
-        const hasBUZZER = activePins.some(pin => pin.match(/^(BUZZER|BEEP)/i));
-
-        sections.forEach(section => {
-            const containerId = section.querySelector('[id$="-container"]')?.id || '';
-
-            let shouldShow = false;
-            if (containerId === 'led-container' && hasLED) shouldShow = true;
-            else if (containerId === 'switch-container' && hasSW) shouldShow = true;
-            else if (containerId === 'btn-container' && hasBTN) shouldShow = true;
-            else if (containerId === 'digit-container' && hasDIGIT) shouldShow = true;
-            else if (containerId === 'buzzer-container' && hasBUZZER) shouldShow = true;
-
-            section.style.opacity = shouldShow ? '1' : '0.25';
-            section.style.pointerEvents = shouldShow ? 'auto' : 'none';
-        });
+        return;
     }
 
     mapWaveformsToUI(waveforms, pinMapping) {
@@ -1047,8 +1018,10 @@ class StudentDashboard {
                     }
                 }
             }
-            else if (pinName.startsWith('SEG_')) {
-                const segmentName = pinName.replace('SEG_', '').toLowerCase();
+            else if (pinName.startsWith('SEG_') || pinName.startsWith('DIGIT_')) {
+                const segmentName = pinName.startsWith('SEG_')
+                    ? pinName.replace('SEG_', '').toLowerCase()
+                    : pinName.replace('DIGIT_', '').toLowerCase();
                 document.querySelectorAll('.digit').forEach(digitEl => {
                     const segmentEl = digitEl.querySelector(`.segment-${segmentName}`);
                     if (segmentEl) {
@@ -1069,8 +1042,8 @@ class StudentDashboard {
                     }
                 }
             }
-            else if (pinName.startsWith('BTN')) {
-                const btnIndex = parseInt(pinName.replace(/BTN/i, ''), 10);
+            else if (pinName.startsWith('BTN') || pinName.startsWith('KEY')) {
+                const btnIndex = parseInt(pinName.replace(/^(BTN|KEY)/i, ''), 10);
                 if (!isNaN(btnIndex) && btnIndex >= 0 && btnIndex <= 5) {
                     const btnEl = document.getElementById(`k${btnIndex}`);
                     if (btnEl) {

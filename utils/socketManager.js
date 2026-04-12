@@ -49,7 +49,7 @@ function setupSocket(server, serverType = 'default') {
         // 设备绑定 - 学生端功能
         // =====================================================
         socket.on('bind_device', async (data) => {
-            const deviceId = data.deviceId || 'demo_device';
+            const deviceId = data.deviceId || 'FPGA_device';
             boundDevices.set(socket.id, deviceId);
             deviceToStudentSocket.set(deviceId, socket.id);
 
@@ -65,11 +65,13 @@ function setupSocket(server, serverType = 'default') {
         // 开始采集 - 学生端功能
         // =====================================================
         socket.on('start_capture', async (data) => {
-            const deviceId = data.deviceId || 'demo_device';
+            const deviceId = data.deviceId || 'FPGA_device';
             const requestedPins = data.requestedPins || [];
             const experimentId = data.experimentId || 0;
+            const clockSource = data.clockSource || '50Hz';
+            const submissionId = data.submissionId || null;
 
-            console.log(`🎬 收到开始采集请求: deviceId=${deviceId}, pins=${requestedPins.length}, experimentId=${experimentId}`);
+            console.log(`🎬 收到开始采集请求: deviceId=${deviceId}, pins=${requestedPins.length}, experimentId=${experimentId}, clockSource=${clockSource}, submissionId=${submissionId}`);
 
             deviceRequestedPins.set(deviceId, requestedPins);
 
@@ -77,7 +79,9 @@ function setupSocket(server, serverType = 'default') {
                 tcpServerModule.sendCommand(deviceId, {
                     action: 'start_capture',
                     requestedPins: requestedPins,
-                    experimentId: experimentId
+                    experimentId: experimentId,
+                    clockSource: clockSource,
+                    submissionId: submissionId
                 });
             }
 
@@ -99,7 +103,7 @@ function setupSocket(server, serverType = 'default') {
         // 停止采集 - 学生端功能
         // =====================================================
         socket.on('stop_capture', async (data) => {
-            const deviceId = data.deviceId || 'demo_device';
+            const deviceId = data.deviceId || 'FPGA_device';
 
             console.log(`⏹️ 收到停止采集请求: deviceId=${deviceId}`);
 
@@ -313,34 +317,19 @@ function broadcastDeviceData(data) {
     let filteredPinMapping = pinMapping;
 
     if (isFiltered && waveforms && pinMapping) {
-        const pinSet = new Set(requestedPins);
+        const { getPinId } = require('./pinConfig');
         const filteredIndices = [];
-        const pinNameToIndex = new Map();
+
+        const requestedPinIdSet = new Set(
+            requestedPins.map(p => getPinId(p)).filter(id => id !== null)
+        );
 
         pinMapping.forEach((pinName, index) => {
-            const normalizedName = pinName.toUpperCase().replace(/\s+/g, '');
-            pinNameToIndex.set(normalizedName, index);
-            if (pinSet.has(pinName)) {
+            const pinId = getPinId(pinName);
+            if (pinId !== null && requestedPinIdSet.has(pinId)) {
                 filteredIndices.push(index);
-            }
-        });
-
-        requestedPins.forEach(requestedPin => {
-            const normalizedRequested = requestedPin.toUpperCase().replace(/\s+/g, '');
-            let found = false;
-            for (const [pinName, index] of pinNameToIndex.entries()) {
-                const normalizedPinName = pinName.toUpperCase().replace(/\s+/g, '');
-                if (normalizedPinName === normalizedRequested ||
-                    normalizedPinName.endsWith('_' + normalizedRequested) ||
-                    normalizedRequested.endsWith('_' + normalizedPinName)) {
-                    if (!filteredIndices.includes(index)) {
-                        filteredIndices.push(index);
-                    }
-                    found = true;
-                }
-            }
-            if (!found) {
-                console.warn(`[WARN] Pin ${requestedPin} not found in pinMapping`);
+            } else if (pinId === null) {
+                console.warn(`[WARN] Unknown pin in pinMapping: ${pinName}`);
             }
         });
 

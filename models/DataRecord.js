@@ -66,7 +66,7 @@ class DataRecord {
             return rows.map(row => ({
                 id: row.id,
                 timestamp: row.timestamp,
-                waveforms: row.waveforms_json ? JSON.parse(row.waveforms_json) : null
+                waveforms: DataRecord._safeJsonParse(row.waveforms_json)
             }));
         } catch (error) {
             console.error('获取最近记录失败:', error);
@@ -74,10 +74,24 @@ class DataRecord {
         }
     }
 
+    static _safeJsonParse(jsonString) {
+        if (!jsonString) return null;
+        // 如果已经是对象，直接返回
+        if (typeof jsonString !== 'string') {
+            return jsonString;
+        }
+        try {
+            return JSON.parse(jsonString);
+        } catch (e) {
+            console.error('JSON 解析失败:', e.message, '原始数据:', typeof jsonString === 'string' ? jsonString.substring(0, 100) : jsonString);
+            return null;
+        }
+    }
+
     static async getSubmissionRecords(submissionId) {
         try {
             const [rows] = await pool().execute(
-                `SELECT id, timestamp, waveforms_json, led_states, switch_states, button_states
+                `SELECT id, timestamp, waveforms_json, pin_mapping_json
                  FROM experiment_data
                  WHERE submission_id = ?
                  ORDER BY timestamp ASC`,
@@ -87,10 +101,8 @@ class DataRecord {
             return rows.map(row => ({
                 id: row.id,
                 timestamp: row.timestamp,
-                waveforms: row.waveforms_json ? JSON.parse(row.waveforms_json) : null,
-                led_data: row.led_states ? JSON.parse(row.led_states) : null,
-                switch_data: row.switch_states ? JSON.parse(row.switch_states) : null,
-                button_states: row.button_states
+                waveforms: DataRecord._safeJsonParse(row.waveforms_json),
+                pin_mapping: DataRecord._safeJsonParse(row.pin_mapping_json) || []
             }));
         } catch (error) {
             console.error('获取提交记录失败:', error);
@@ -122,27 +134,30 @@ class DataRecord {
     static async getDataAnalysis(submissionId) {
         try {
             const records = await DataRecord.getSubmissionRecords(submissionId);
-            
+
             if (records.length === 0) {
                 return null;
             }
 
-            let totalLedOn = 0;
-            let totalSwitchOn = 0;
-            
+            let totalHighCount = 0;
+            let totalLowCount = 0;
+
             records.forEach(record => {
-                if (record.led_data) {
-                    totalLedOn += record.led_data.filter(v => v === 1).length;
-                }
-                if (record.switch_data) {
-                    totalSwitchOn += record.switch_data.filter(v => v === 1).length;
+                if (record.waveforms) {
+                    record.waveforms.forEach(channel => {
+                        channel.forEach(v => {
+                            if (v === 1) totalHighCount++;
+                            else totalLowCount++;
+                        });
+                    });
                 }
             });
 
             return {
                 total_records: records.length,
-                avg_led_on: records.length > 0 ? totalLedOn / records.length : 0,
-                avg_switch_on: records.length > 0 ? totalSwitchOn / records.length : 0,
+                total_high: totalHighCount,
+                total_low: totalLowCount,
+                high_ratio: totalHighCount / (totalHighCount + totalLowCount) || 0,
                 first_timestamp: records[0]?.timestamp,
                 last_timestamp: records[records.length - 1]?.timestamp
             };

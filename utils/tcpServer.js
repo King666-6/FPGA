@@ -15,6 +15,15 @@ const DEFAULT_CLOCK_SELECT = 0x0001;
 const DEFAULT_DEVICE_NUMBER = 0xCCCCCCCC;
 const RESERVED_BYTES = Buffer.from([0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA]);
 
+const CLOCK_SELECT_MAP = {
+    '50Hz': 0x0001,
+    '100Hz': 0x0002,
+    '1kHz': 0x0003,
+    '10kHz': 0x0004,
+    '100kHz': 0x0005,
+    '500kHz': 0x0006
+};
+
 let globalDeviceIdCounter = 1;
 
 function buildCommandBuffer(options = {}) {
@@ -199,15 +208,11 @@ class TCPServer {
             chunk[0] === 0xFF && chunk[1] === 0xFE &&
             chunk[2] === 0xCC && chunk[3] === 0xCC) {
 
-            const deviceId = chunk.slice(4).toString('hex').toUpperCase();
-            socket.deviceId = deviceId || 'demo_device';
+            socket.deviceId = 'FPGA_device';
             parser.deviceId = socket.deviceId;
             this.deviceSocketMap.set(socket.deviceId, socket);
 
             console.log(`[TCP] 设备注册: ${socket.deviceId}`);
-
-            const ack = Buffer.from([0xFF, 0xFE, 0x00, 0x01]);
-            socket.write(ack);
 
             broadcastToTeachers('global-device-status', {
                 deviceId: socket.deviceId,
@@ -233,7 +238,7 @@ class TCPServer {
         try {
             const deviceDbId = await DataRecord._getOrCreateDevice(deviceId);
             const deviceContext = this.deviceContexts.get(deviceId);
-            const submissionId = deviceContext?.experimentId || null;
+            const submissionId = deviceContext?.submissionId || null;
 
             const sql = `
                 INSERT INTO experiment_data (submission_id, device_id, timestamp, pin_mapping_json, waveforms_json, sample_count, channel_count)
@@ -281,8 +286,11 @@ class TCPServer {
                 }
 
                 const packetCount = validIds.length || 2;
+                const clockSource = command.clockSource || '50Hz';
+                const clockSelect = CLOCK_SELECT_MAP[clockSource] || DEFAULT_CLOCK_SELECT;
 
                 const cmdBuffer = buildCommandBuffer({
+                    clockSelect: clockSelect,
                     packetCount: packetCount,
                     requestedPins: validIds
                 });
@@ -293,6 +301,7 @@ class TCPServer {
                     pinMapping: validIds,
                     requestedPinNames: requestedPins,
                     experimentId: command.experimentId || 0,
+                    submissionId: command.submissionId || null,
                     lastCommandTime: Date.now()
                 });
 

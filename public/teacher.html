@@ -202,6 +202,25 @@
                         <p class="empty-hint">等待 FPGA 设备通过 TCP 连接...</p>
                     </div>
                 </div>
+
+                <section class="teacher-waveform-section" style="min-height: 200px;">
+                    <h3 class="f-section-title">📊 逻辑波形分析</h3>
+                    <div class="waveform-source-controls" style="margin-bottom: 10px;">
+                        <label>
+                            <input type="radio" name="waveSource" value="live" checked> 实时接收
+                        </label>
+                        <label>
+                            <input type="radio" name="waveSource" value="history"> 历史回放
+                        </label>
+                        <input type="file" id="replayWaveformFile" accept=".json"
+                               style="display:none;"
+                               title="选择波形JSON文件">
+                    </div>
+                    <div id="teacherWaveformFilters" class="waveform-filters"></div>
+                    <div class="f-canvas-container" style="height:400px; background:#1a1a1a; border-radius:4px;">
+                        <canvas id="teacherWaveformCanvas"></canvas>
+                    </div>
+                </section>
             </section>
 
             <!-- 实验发布中心 -->
@@ -260,18 +279,16 @@
                                         <input type="number" id="expDuration" name="estimated_duration" value="60" min="15" max="240">
                                     </div>
                                 </div>
-                                
-                                <div class="form-group">
-                                    <label for="sampleLength">采集深度/包数量 <span class="required">*</span></label>
-                                    <input type="number" id="sampleLength" name="sample_length" value="32" min="1" max="65536" placeholder="例如：32">
-                                    <small class="form-hint">每个引脚采集的数据包数量 (1-65536)</small>
-                                </div>
 
                                 <div class="form-group">
                                     <label>采样时钟来源 <span class="required">*</span></label>
                                     <select name="sample_clock_source" required>
-                                        <option value="external" selected>external - 外部时钟</option>
-                                        <option value="internal">internal - 内部时钟</option>
+                                        <option value="50Hz" selected>50Hz</option>
+                                        <option value="100Hz">100Hz</option>
+                                        <option value="1kHz">1kHz</option>
+                                        <option value="10kHz">10kHz</option>
+                                        <option value="100kHz">100kHz</option>
+                                        <option value="500kHz">500kHz</option>
                                     </select>
                                 </div>
 
@@ -281,7 +298,7 @@
 
                                         <div class="pins-category">
                                             <div class="pins-category-header">
-                                                <span class="pins-category-title">💡 LED (指示灯) 32个</span>
+                                                <span class="pins-category-title">💡 LED (指示灯) 16个</span>
                                                 <button type="button" class="btn btn-small" onclick="selectAllPins('target_pins_led')">全选</button>
                                                 <button type="button" class="btn btn-small" onclick="deselectAllPins('target_pins_led')">全不选</button>
                                             </div>
@@ -302,28 +319,12 @@
                                                 <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="LED13"> LED13</label>
                                                 <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="LED14"> LED14</label>
                                                 <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="LED15"> LED15</label>
-                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="LED16"> LED16</label>
-                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="LED17"> LED17</label>
-                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="LED18"> LED18</label>
-                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="LED19"> LED19</label>
-                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="LED20"> LED20</label>
-                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="LED21"> LED21</label>
-                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="LED22"> LED22</label>
-                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="LED23"> LED23</label>
-                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="LED24"> LED24</label>
-                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="LED25"> LED25</label>
-                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="LED26"> LED26</label>
-                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="LED27"> LED27</label>
-                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="LED28"> LED28</label>
-                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="LED29"> LED29</label>
-                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="LED30"> LED30</label>
-                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="LED31"> LED31</label>
                                             </div>
                                         </div>
 
                                         <div class="pins-category">
                                             <div class="pins-category-header">
-                                                <span class="pins-category-title">🔌 SW (拨码开关) 32个</span>
+                                                <span class="pins-category-title">🔌 SW (拨码开关) 16个</span>
                                                 <button type="button" class="btn btn-small" onclick="selectAllPins('target_pins_sw')">全选</button>
                                                 <button type="button" class="btn btn-small" onclick="deselectAllPins('target_pins_sw')">全不选</button>
                                             </div>
@@ -344,28 +345,12 @@
                                                 <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="SW13"> SW13</label>
                                                 <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="SW14"> SW14</label>
                                                 <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="SW15"> SW15</label>
-                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="SW16"> SW16</label>
-                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="SW17"> SW17</label>
-                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="SW18"> SW18</label>
-                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="SW19"> SW19</label>
-                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="SW20"> SW20</label>
-                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="SW21"> SW21</label>
-                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="SW22"> SW22</label>
-                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="SW23"> SW23</label>
-                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="SW24"> SW24</label>
-                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="SW25"> SW25</label>
-                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="SW26"> SW26</label>
-                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="SW27"> SW27</label>
-                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="SW28"> SW28</label>
-                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="SW29"> SW29</label>
-                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="SW30"> SW30</label>
-                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="SW31"> SW31</label>
                                             </div>
                                         </div>
 
                                         <div class="pins-category">
                                             <div class="pins-category-header">
-                                                <span class="pins-category-title">🔘 独立按键</span>
+                                                <span class="pins-category-title">🔘 独立按键 6个</span>
                                                 <button type="button" class="btn btn-small" onclick="selectAllPins('target_pins_btn')">全选</button>
                                                 <button type="button" class="btn btn-small" onclick="deselectAllPins('target_pins_btn')">全不选</button>
                                             </div>
@@ -374,18 +359,8 @@
                                                 <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="BTN1"> BTN1</label>
                                                 <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="BTN2"> BTN2</label>
                                                 <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="BTN3"> BTN3</label>
-                                            </div>
-                                        </div>
-
-                                        <div class="pins-category">
-                                            <div class="pins-category-header">
-                                                <span class="pins-category-title">🔘 A7 按键</span>
-                                                <button type="button" class="btn btn-small" onclick="selectAllPins('target_pins_a7')">全选</button>
-                                                <button type="button" class="btn btn-small" onclick="deselectAllPins('target_pins_a7')">全不选</button>
-                                            </div>
-                                            <div class="pins-options" id="target_pins_a7">
-                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="A7_BTN0"> A7_BTN0</label>
-                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="A7_BTN1"> A7_BTN1</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="BTN4"> BTN4</label>
+                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="BTN5"> BTN5</label>
                                             </div>
                                         </div>
 
@@ -402,7 +377,7 @@
 
                                         <div class="pins-category">
                                             <div class="pins-category-header">
-                                                <span class="pins-category-title">7段数码管段选</span>
+                                                <span class="pins-category-title">7段数码管段选 7个</span>
                                                 <button type="button" class="btn btn-small" onclick="selectAllPins('target_pins_seg')">全选</button>
                                                 <button type="button" class="btn btn-small" onclick="deselectAllPins('target_pins_seg')">全不选</button>
                                             </div>
@@ -419,7 +394,7 @@
 
                                         <div class="pins-category">
                                             <div class="pins-category-header">
-                                                <span class="pins-category-title">7段数码管位选</span>
+                                                <span class="pins-category-title">7段数码管位选 8个</span>
                                                 <button type="button" class="btn btn-small" onclick="selectAllPins('target_pins_dig')">全选</button>
                                                 <button type="button" class="btn btn-small" onclick="deselectAllPins('target_pins_dig')">全不选</button>
                                             </div>
@@ -432,34 +407,6 @@
                                                 <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="DIG5"> DIG5</label>
                                                 <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="DIG6"> DIG6</label>
                                                 <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="DIG7"> DIG7</label>
-                                            </div>
-                                        </div>
-
-                                        <div class="pins-category">
-                                            <div class="pins-category-header">
-                                                <span class="pins-category-title">矩阵按键列</span>
-                                                <button type="button" class="btn btn-small" onclick="selectAllPins('target_pins_col')">全选</button>
-                                                <button type="button" class="btn btn-small" onclick="deselectAllPins('target_pins_col')">全不选</button>
-                                            </div>
-                                            <div class="pins-options" id="target_pins_col">
-                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="COL0"> COL0</label>
-                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="COL1"> COL1</label>
-                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="COL2"> COL2</label>
-                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="COL3"> COL3</label>
-                                            </div>
-                                        </div>
-
-                                        <div class="pins-category">
-                                            <div class="pins-category-header">
-                                                <span class="pins-category-title">矩阵按键行</span>
-                                                <button type="button" class="btn btn-small" onclick="selectAllPins('target_pins_row')">全选</button>
-                                                <button type="button" class="btn btn-small" onclick="deselectAllPins('target_pins_row')">全不选</button>
-                                            </div>
-                                            <div class="pins-options" id="target_pins_row">
-                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="ROW0"> ROW0</label>
-                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="ROW1"> ROW1</label>
-                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="ROW2"> ROW2</label>
-                                                <label class="pin-checkbox"><input type="checkbox" name="target_pins" value="ROW3"> ROW3</label>
                                             </div>
                                         </div>
 

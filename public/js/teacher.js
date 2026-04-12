@@ -1,7 +1,261 @@
 // 📁 public/js/teacher.js - 教师端主入口
-const API_BASE = window.location.port === '3000' 
-    ? 'http://localhost:3000/api' 
+const API_BASE = window.location.port === '3000'
+    ? 'http://localhost:3000/api'
     : 'http://localhost:3000/api';
+
+// =====================================================
+// 波形可视化类（移植自 student.js）
+// =====================================================
+class WaveformVisualizer {
+    constructor(canvasId) {
+        this.canvas = document.getElementById(canvasId);
+        if (!this.canvas) {
+            console.error(`Canvas with id ${canvasId} not found.`);
+            return;
+        }
+        this.ctx = this.canvas.getContext('2d');
+
+        this.offsetX = 0;
+        this.scaleX = 1;
+        this.isDragging = false;
+        this.lastMouseX = 0;
+
+        this.labelAreaWidth = 80;
+
+        this.historyWaveforms = [];
+        this.maxHistoryPoints = 5000;
+        this.lastDataLength = 0;
+
+        this.channelVisibility = [];
+        this.minChannelHeight = 40;
+
+        this._lastPinMapping = null;
+
+        this.resizeCanvas();
+        window.addEventListener('resize', () => this.resizeCanvas());
+        this.bindEvents();
+    }
+
+    setChannelVisibility(visibilityArray) {
+        this.channelVisibility = visibilityArray;
+        this.redraw();
+    }
+
+    getVisibleChannelIndices() {
+        const indices = [];
+        for (let i = 0; i < this.channelVisibility.length; i++) {
+            if (this.channelVisibility[i]) {
+                indices.push(i);
+            }
+        }
+        return indices;
+    }
+
+    getChannelVisibility() {
+        return this.channelVisibility;
+    }
+
+    bindEvents() {
+        this.canvas.addEventListener('wheel', (e) => this.handleWheel(e), { passive: false });
+        this.canvas.addEventListener('mousedown', (e) => this.handleMouseDown(e));
+        this.canvas.addEventListener('mousemove', (e) => this.handleMouseMove(e));
+        this.canvas.addEventListener('mouseup', () => this.handleMouseUp());
+        this.canvas.addEventListener('mouseleave', () => this.handleMouseUp());
+        this.canvas.addEventListener('click', () => {});
+    }
+
+    handleWheel(e) {
+        if (!e.ctrlKey) return;
+        e.preventDefault();
+
+        const rect = this.canvas.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseRelX = mouseX - this.labelAreaWidth;
+
+        const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
+        const newScale = Math.max(0.1, Math.min(50, this.scaleX * zoomFactor));
+
+        const scalePoint = (mouseRelX / this.scaleX) + this.offsetX;
+        this.offsetX = scalePoint - (mouseRelX / newScale);
+        this.scaleX = newScale;
+
+        this.redraw();
+    }
+
+    handleMouseDown(e) {
+        if (e.button !== 0) return;
+        this.isDragging = true;
+        this.lastMouseX = e.clientX;
+        this.canvas.style.cursor = 'grabbing';
+    }
+
+    handleMouseMove(e) {
+        if (!this.isDragging) return;
+
+        const deltaX = e.clientX - this.lastMouseX;
+        this.offsetX += deltaX / this.scaleX;
+        this.lastMouseX = e.clientX;
+
+        this.redraw();
+    }
+
+    handleMouseUp() {
+        this.isDragging = false;
+        this.canvas.style.cursor = 'default';
+    }
+
+    resetView() {
+        this.offsetX = 0;
+        this.scaleX = 1;
+        this.historyWaveforms = [];
+        this.redraw();
+    }
+
+    resizeCanvas() {
+        const dpr = window.devicePixelRatio || 1;
+        this.canvas.width = this.canvas.offsetWidth * dpr;
+        this.canvas.height = this.canvas.offsetHeight * dpr;
+        this.ctx.scale(dpr, dpr);
+        this.redraw();
+    }
+
+    redraw() {
+        if (this.historyWaveforms.length > 0) {
+            this.draw(this.historyWaveforms, this._lastPinMapping);
+        } else {
+            const dpr = window.devicePixelRatio || 1;
+            const { width, height } = this.canvas.getBoundingClientRect();
+            this.ctx.clearRect(0, 0, width * dpr, height * dpr);
+        }
+    }
+
+    draw(waveforms, pinMapping) {
+        if (!this.ctx || !waveforms || waveforms.length === 0) return;
+
+        this._lastWaveforms = waveforms;
+        this._lastPinMapping = pinMapping;
+
+        const { width, height } = this.canvas.getBoundingClientRect();
+        this.ctx.clearRect(0, 0, width, height);
+
+        const visibleIndices = this.getVisibleChannelIndices();
+        const numVisibleChannels = visibleIndices.length;
+
+        if (numVisibleChannels === 0) return;
+
+        const channelHeight = Math.max(height / numVisibleChannels, this.minChannelHeight);
+        const canvasHeight = numVisibleChannels * channelHeight;
+
+        this.canvas.style.height = canvasHeight + 'px';
+
+        const dpr = window.devicePixelRatio || 1;
+        this.canvas.height = canvasHeight * dpr;
+
+        const signalAmplitude = channelHeight * 0.4;
+
+        this.ctx.strokeStyle = '#00E676';
+        this.ctx.lineWidth = 1.5;
+        this.ctx.font = '12px monospace';
+        this.ctx.fillStyle = '#B2DFDB';
+
+        visibleIndices.forEach((originalIndex, visibleIndex) => {
+            const channelData = waveforms[originalIndex];
+            if (!channelData || channelData.length === 0) return;
+
+            const yBase = (visibleIndex + 0.5) * channelHeight;
+
+            const labelText = pinMapping?.[originalIndex] || `CH ${originalIndex}`;
+            this.ctx.fillStyle = '#00E676';
+            this.ctx.fillText(labelText, 8, yBase + 4);
+
+            this.ctx.beginPath();
+
+            const firstX = this.labelAreaWidth + (0 - this.offsetX) * this.scaleX;
+            const firstY = yBase - (channelData[0] - 0.5) * signalAmplitude;
+            this.ctx.moveTo(firstX, firstY);
+
+            for (let j = 1; j < channelData.length; j++) {
+                const x = this.labelAreaWidth + (j - this.offsetX) * this.scaleX;
+                const yPrev = yBase - (channelData[j - 1] - 0.5) * signalAmplitude;
+                const yCurr = yBase - (channelData[j] - 0.5) * signalAmplitude;
+
+                this.ctx.lineTo(x, yPrev);
+                this.ctx.lineTo(x, yCurr);
+            }
+            this.ctx.stroke();
+        });
+
+        this.drawGrid(width, canvasHeight, numVisibleChannels);
+    }
+
+    appendWaveform(newWaveforms, pinMapping) {
+        if (!newWaveforms || newWaveforms.length === 0) return;
+
+        if (this.historyWaveforms.length === 0) {
+            this.historyWaveforms = newWaveforms.map(ch => [...(ch || [])]);
+        } else {
+            for (let i = 0; i < newWaveforms.length; i++) {
+                if (newWaveforms[i] && newWaveforms[i].length > 0) {
+                    if (!this.historyWaveforms[i]) {
+                        this.historyWaveforms[i] = [];
+                    }
+                    this.historyWaveforms[i] = this.historyWaveforms[i].concat(newWaveforms[i]);
+                }
+            }
+        }
+
+        for (let i = 0; i < this.historyWaveforms.length; i++) {
+            if (this.historyWaveforms[i] && this.historyWaveforms[i].length > this.maxHistoryPoints) {
+                this.historyWaveforms[i] = this.historyWaveforms[i].slice(-this.maxHistoryPoints);
+            }
+        }
+
+        this._lastPinMapping = pinMapping;
+
+        if (!this.isDragging) {
+            const totalLength = this.historyWaveforms[0]?.length || 0;
+            if (totalLength > this.lastDataLength) {
+                this.offsetX = Math.max(0, totalLength - 200);
+            }
+            this.lastDataLength = totalLength;
+        }
+
+        this.redraw();
+    }
+
+    drawGrid(width, height, numChannels) {
+        const channelHeight = height / numChannels;
+
+        this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+        this.ctx.lineWidth = 0.5;
+        this.ctx.font = '10px monospace';
+        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+
+        for (let i = 0; i <= numChannels; i++) {
+            const y = i * channelHeight;
+            this.ctx.beginPath();
+            this.ctx.moveTo(this.labelAreaWidth, y);
+            this.ctx.lineTo(width, y);
+            this.ctx.stroke();
+        }
+
+        const gridSpacing = 50 * this.scaleX;
+        if (gridSpacing > 10) {
+            const startX = Math.floor(this.offsetX / 50) * 50;
+            for (let x = startX; x < this.offsetX + width / this.scaleX; x += 50) {
+                const screenX = this.labelAreaWidth + (x - this.offsetX) * this.scaleX;
+                if (screenX > this.labelAreaWidth && screenX < width) {
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(screenX, 0);
+                    this.ctx.lineTo(screenX, height);
+                    this.stroke();
+
+                    this.ctx.fillText(x.toString(), screenX + 2, 12);
+                }
+            }
+        }
+    }
+}
 
 // =====================================================
 // 全局状态管理
@@ -12,7 +266,9 @@ class TeacherApp {
         this.socket = null;
         this.modules = {};
         this.user = null;
-        
+        this.teacherWaveform = null;
+        this.currentWaveSource = 'live';
+
         this.init();
     }
 
@@ -23,6 +279,7 @@ class TeacherApp {
             this.initModules();
             this.bindEvents();
             this.loadDashboardData();
+            this.initGlobalDeviceUpdateListener();
         } catch (error) {
             console.error('初始化失败:', error);
             if (error.message === 'Unauthorized') {
@@ -114,6 +371,60 @@ class TeacherApp {
         this.modules.classes = this.modules.classManager;
         this.modules.devices = this.modules.deviceMonitor;
         this.modules.experiments = this.modules.experimentBuilder;
+
+        this.teacherWaveform = new WaveformVisualizer('teacherWaveformCanvas');
+    }
+
+    updateTeacherWaveformFilters(pinMapping) {
+        if (!pinMapping || pinMapping.length === 0) return;
+        const filterContainer = document.getElementById('teacherWaveformFilters');
+        if (!filterContainer) return;
+
+        const lastMapping = filterContainer.dataset.lastMapping;
+        const mappingStr = JSON.stringify(pinMapping);
+        if (lastMapping === mappingStr) return;
+
+        filterContainer.dataset.lastMapping = mappingStr;
+        filterContainer.innerHTML = '';
+        const visibility = [];
+
+        pinMapping.forEach((pinName, index) => {
+            const label = document.createElement('label');
+            label.className = 'filter-label checked';
+
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.checked = true;
+            checkbox.dataset.index = index;
+
+            visibility.push(true);
+
+            checkbox.addEventListener('change', () => {
+                const idx = parseInt(checkbox.dataset.index, 10);
+                const currentVisibility = [...this.teacherWaveform.getChannelVisibility()];
+                currentVisibility[idx] = checkbox.checked;
+                label.classList.toggle('checked', checkbox.checked);
+                this.teacherWaveform.setChannelVisibility(currentVisibility);
+            });
+
+            label.appendChild(checkbox);
+            label.appendChild(document.createTextNode(' ' + pinName));
+            filterContainer.appendChild(label);
+        });
+
+        this.teacherWaveform.setChannelVisibility(visibility);
+    }
+
+    initGlobalDeviceUpdateListener() {
+        this.socket.on('device-update', (data) => {
+            if (this.currentWaveSource === 'live' && data.waveforms) {
+                if (this.teacherWaveform.canvas.width === 0) {
+                    this.teacherWaveform.resizeCanvas();
+                }
+                this.updateTeacherWaveformFilters(data.pinMapping);
+                this.teacherWaveform.appendWaveform(data.waveforms, data.pinMapping);
+            }
+        });
     }
 
     bindEvents() {
@@ -135,9 +446,68 @@ class TeacherApp {
         // 模态框关闭
         document.getElementById('modalClose')?.addEventListener('click', () => {
             document.getElementById('modalOverlay').style.display = 'none';
-            if (this.modules.deviceMonitor) {
-                this.modules.deviceMonitor.closeObserveModal();
-            }
+        });
+
+        // 波形数据源切换（实时/历史）
+        document.querySelectorAll('input[name="waveSource"]').forEach(radio => {
+            radio.addEventListener('change', (e) => {
+                this.currentWaveSource = e.target.value;
+                const historyInputs = document.querySelectorAll('#replayWaveformFile');
+                historyInputs.forEach(el => el.style.display =
+                    this.currentWaveSource === 'history' ? 'inline-block' : 'none');
+
+                this.teacherWaveform.resetView();
+                this.teacherWaveform._lastPinMapping = null;
+                this.teacherWaveform.channelVisibility = [];
+
+                const filterContainer = document.getElementById('teacherWaveformFilters');
+                if (filterContainer) {
+                    filterContainer.dataset.lastMapping = '';
+                    filterContainer.innerHTML = '';
+                }
+            });
+        });
+
+        document.getElementById('replayWaveformFile')?.addEventListener('change', (e) => {
+            const fileInput = e.target;
+            if (!fileInput?.files?.length) return;
+
+            const file = fileInput.files[0];
+            const reader = new FileReader();
+
+            reader.onload = (e) => {
+                try {
+                    const exportData = JSON.parse(e.target.result);
+
+                    if (!exportData.waveforms || !Array.isArray(exportData.waveforms)) {
+                        alert('文件格式错误：缺少 waveforms 字段');
+                        return;
+                    }
+
+                    const waveforms = exportData.waveforms;
+                    const pinMapping = exportData.pin_mapping || [];
+
+                    if (waveforms.length === 0) {
+                        alert('文件中没有波形数据');
+                        return;
+                    }
+
+                    this.teacherWaveform.resetView();
+                    this.updateTeacherWaveformFilters(pinMapping);
+                    this.teacherWaveform.appendWaveform(waveforms, pinMapping);
+
+                    console.log(`[历史回放] 已加载: ${file.name} | ${waveforms.length}通道 | ${waveforms[0]?.length || 0}采样点`);
+
+                } catch (parseError) {
+                    console.error('解析波形文件失败:', parseError);
+                    alert('文件解析失败，请确认是有效的波形 JSON 文件');
+                }
+            };
+
+            reader.onerror = () => alert('文件读取失败');
+            reader.readAsText(file);
+
+            fileInput.value = '';
         });
 
         // 哈希路由
@@ -329,256 +699,6 @@ class DashboardModule {
 }
 
 // =====================================================
-// 旁观者波形可视化类（完整版 - 移植自 student.js）
-// =====================================================
-class ObserveVisualizer {
-    constructor(canvasId) {
-        this.canvas = document.getElementById(canvasId);
-        if (!this.canvas) {
-            console.error(`Canvas with id ${canvasId} not found.`);
-            return;
-        }
-        this.ctx = this.canvas.getContext('2d');
-
-        this.offsetX = 0;
-        this.scaleX = 1;
-        this.isDragging = false;
-        this.lastMouseX = 0;
-
-        this.labelAreaWidth = 80;
-
-        this.historyWaveforms = [];
-        this.maxHistoryPoints = 5000;
-        this.lastDataLength = 0;
-
-        this.channelVisibility = [];
-        this.minChannelHeight = 40;
-
-        this._lastPinMapping = null;
-
-        this.resizeCanvas();
-        window.addEventListener('resize', () => this.resizeCanvas());
-        this.bindEvents();
-    }
-
-    setChannelVisibility(visibilityArray) {
-        this.channelVisibility = visibilityArray;
-        this.redraw();
-    }
-
-    getVisibleChannelIndices() {
-        const indices = [];
-        for (let i = 0; i < this.channelVisibility.length; i++) {
-            if (this.channelVisibility[i]) {
-                indices.push(i);
-            }
-        }
-        return indices;
-    }
-
-    getChannelVisibility() {
-        return this.channelVisibility;
-    }
-
-    bindEvents() {
-        this.canvas.addEventListener('wheel', (e) => this.handleWheel(e), { passive: false });
-        this.canvas.addEventListener('mousedown', (e) => this.handleMouseDown(e));
-        this.canvas.addEventListener('mousemove', (e) => this.handleMouseMove(e));
-        this.canvas.addEventListener('mouseup', () => this.handleMouseUp());
-        this.canvas.addEventListener('mouseleave', () => this.handleMouseUp());
-        this.canvas.addEventListener('click', () => {});
-    }
-
-    handleWheel(e) {
-        if (!e.ctrlKey) return;
-        e.preventDefault();
-
-        const rect = this.canvas.getBoundingClientRect();
-        const mouseX = e.clientX - rect.left;
-        const mouseRelX = mouseX - this.labelAreaWidth;
-
-        const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
-        const newScale = Math.max(0.1, Math.min(50, this.scaleX * zoomFactor));
-
-        const scalePoint = (mouseRelX / this.scaleX) + this.offsetX;
-        this.offsetX = scalePoint - (mouseRelX / newScale);
-        this.scaleX = newScale;
-
-        this.redraw();
-    }
-
-    handleMouseDown(e) {
-        if (e.button !== 0) return;
-        this.isDragging = true;
-        this.lastMouseX = e.clientX;
-        this.canvas.style.cursor = 'grabbing';
-    }
-
-    handleMouseMove(e) {
-        if (!this.isDragging) return;
-
-        const deltaX = e.clientX - this.lastMouseX;
-        this.offsetX += deltaX / this.scaleX;
-        this.lastMouseX = e.clientX;
-
-        this.redraw();
-    }
-
-    handleMouseUp() {
-        this.isDragging = false;
-        this.canvas.style.cursor = 'default';
-    }
-
-    resetView() {
-        this.offsetX = 0;
-        this.scaleX = 1;
-        this.historyWaveforms = [];
-        this.redraw();
-    }
-
-    resizeCanvas() {
-        const dpr = window.devicePixelRatio || 1;
-        this.canvas.width = this.canvas.offsetWidth * dpr;
-        this.canvas.height = this.canvas.offsetHeight * dpr;
-        this.ctx.scale(dpr, dpr);
-        this.redraw();
-    }
-
-    redraw() {
-        if (this.historyWaveforms.length > 0) {
-            this.draw(this.historyWaveforms, this._lastPinMapping);
-        }
-    }
-
-    draw(waveforms, pinMapping) {
-        if (!this.ctx || !waveforms || waveforms.length === 0) return;
-
-        this._lastWaveforms = waveforms;
-        this._lastPinMapping = pinMapping;
-
-        const { width, height } = this.canvas.getBoundingClientRect();
-        this.ctx.clearRect(0, 0, width, height);
-
-        const visibleIndices = this.getVisibleChannelIndices();
-        const numVisibleChannels = visibleIndices.length;
-
-        if (numVisibleChannels === 0) return;
-
-        const channelHeight = Math.max(height / numVisibleChannels, this.minChannelHeight);
-        const canvasHeight = numVisibleChannels * channelHeight;
-
-        this.canvas.style.height = canvasHeight + 'px';
-
-        const dpr = window.devicePixelRatio || 1;
-        this.canvas.height = canvasHeight * dpr;
-
-        const signalAmplitude = channelHeight * 0.4;
-
-        this.ctx.strokeStyle = '#00E676';
-        this.ctx.lineWidth = 1.5;
-        this.ctx.font = '12px monospace';
-        this.ctx.fillStyle = '#B2DFDB';
-
-        visibleIndices.forEach((originalIndex, visibleIndex) => {
-            const channelData = waveforms[originalIndex];
-            if (!channelData || channelData.length === 0) return;
-
-            const yBase = (visibleIndex + 0.5) * channelHeight;
-
-            const labelText = pinMapping?.[originalIndex] || `CH ${originalIndex}`;
-            this.ctx.fillStyle = '#00E676';
-            this.ctx.fillText(labelText, 8, yBase + 4);
-
-            this.ctx.beginPath();
-
-            const firstX = this.labelAreaWidth + (0 - this.offsetX) * this.scaleX;
-            const firstY = yBase - (channelData[0] - 0.5) * signalAmplitude;
-            this.ctx.moveTo(firstX, firstY);
-
-            for (let j = 1; j < channelData.length; j++) {
-                const x = this.labelAreaWidth + (j - this.offsetX) * this.scaleX;
-                const yPrev = yBase - (channelData[j - 1] - 0.5) * signalAmplitude;
-                const yCurr = yBase - (channelData[j] - 0.5) * signalAmplitude;
-
-                this.ctx.lineTo(x, yPrev);
-                this.ctx.lineTo(x, yCurr);
-            }
-            this.ctx.stroke();
-        });
-
-        this.drawGrid(width, canvasHeight, numVisibleChannels);
-    }
-
-    appendWaveform(newWaveforms, pinMapping) {
-        if (!newWaveforms || newWaveforms.length === 0) return;
-
-        if (this.historyWaveforms.length === 0) {
-            this.historyWaveforms = newWaveforms.map(ch => [...(ch || [])]);
-        } else {
-            for (let i = 0; i < newWaveforms.length; i++) {
-                if (newWaveforms[i] && newWaveforms[i].length > 0) {
-                    if (!this.historyWaveforms[i]) {
-                        this.historyWaveforms[i] = [];
-                    }
-                    this.historyWaveforms[i] = this.historyWaveforms[i].concat(newWaveforms[i]);
-                }
-            }
-        }
-
-        for (let i = 0; i < this.historyWaveforms.length; i++) {
-            if (this.historyWaveforms[i] && this.historyWaveforms[i].length > this.maxHistoryPoints) {
-                this.historyWaveforms[i] = this.historyWaveforms[i].slice(-this.maxHistoryPoints);
-            }
-        }
-
-        this._lastPinMapping = pinMapping;
-
-        if (!this.isDragging) {
-            const totalLength = this.historyWaveforms[0]?.length || 0;
-            if (totalLength > this.lastDataLength) {
-                this.offsetX = Math.max(0, totalLength - 200);
-            }
-            this.lastDataLength = totalLength;
-        }
-
-        this.redraw();
-    }
-
-    drawGrid(width, height, numChannels) {
-        const channelHeight = height / numChannels;
-
-        this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
-        this.ctx.lineWidth = 0.5;
-        this.ctx.font = '10px monospace';
-        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
-
-        for (let i = 0; i <= numChannels; i++) {
-            const y = i * channelHeight;
-            this.ctx.beginPath();
-            this.ctx.moveTo(this.labelAreaWidth, y);
-            this.ctx.lineTo(width, y);
-            this.ctx.stroke();
-        }
-
-        const gridSpacing = 50 * this.scaleX;
-        if (gridSpacing > 10) {
-            const startX = Math.floor(this.offsetX / 50) * 50;
-            for (let x = startX; x < this.offsetX + width / this.scaleX; x += 50) {
-                const screenX = this.labelAreaWidth + (x - this.offsetX) * this.scaleX;
-                if (screenX > this.labelAreaWidth && screenX < width) {
-                    this.ctx.beginPath();
-                    this.ctx.moveTo(screenX, 0);
-                    this.ctx.lineTo(screenX, height);
-                    this.ctx.stroke();
-
-                    this.ctx.fillText(x.toString(), screenX + 2, 12);
-                }
-            }
-        }
-    }
-}
-
-// =====================================================
 // 设备监控大厅模块
 // =====================================================
 class DeviceMonitorModule {
@@ -586,9 +706,6 @@ class DeviceMonitorModule {
         this.app = app;
         this.devices = new Map();
         this.filter = 'all';
-        this.observingDeviceId = null;
-        this.observeHandler = null;
-        this.observeVisualizer = null;
 
         this.init();
     }
@@ -661,19 +778,12 @@ class DeviceMonitorModule {
         grid.querySelectorAll('.diagnose-btn').forEach(btn => {
             btn.addEventListener('click', () => this.diagnoseDevice(btn.dataset.deviceId));
         });
-
-        grid.querySelectorAll('.observe-btn').forEach(btn => {
-            btn.addEventListener('click', () => this.openObserveModal(btn.dataset.deviceId));
-        });
     }
 
     createDeviceCard(device) {
         const statusClass = this.getStatusClass(device.status);
         const statusText = this.getStatusText(device.status);
         const captureStatus = device.isCapturing ? '🔴 采集中' : '';
-        const observeBtn = device.status === 'capturing'
-            ? `<button class="btn btn-small btn-info observe-btn" data-device-id="${device.deviceId}">📺 旁观</button>`
-            : '';
 
         return `
             <div class="device-card ${statusClass}">
@@ -692,7 +802,6 @@ class DeviceMonitorModule {
                 </div>
                 <div class="device-footer">
                     <button class="btn btn-small diagnose-btn" data-device-id="${device.deviceId}">故障检测</button>
-                    ${observeBtn}
                 </div>
             </div>
         `;
@@ -738,372 +847,13 @@ class DeviceMonitorModule {
         }
     }
 
-    openObserveModal(deviceId) {
-        this.observingDeviceId = deviceId;
-
-        const modal = document.getElementById('modalOverlay');
-        const title = document.getElementById('modalTitle');
-        const body = document.getElementById('modalBody');
-
-        title.textContent = `📺 旁观设备: ${deviceId}`;
-        body.innerHTML = `
-            <div id="observePanel" class="f-layout" style="pointer-events:none;">
-                <div class="f-topbar" style="padding:8px;background:#1a1a2e;border-radius:6px;margin-bottom:10px;">
-                    <span style="color:#00E676;font-weight:bold;">📺 旁观模式 - ${deviceId}</span>
-                </div>
-
-                <div class="f-digits" id="obs-digit-container" style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px;justify-content:center;"></div>
-
-                <div class="f-io-panel" style="display:flex;gap:10px;margin-bottom:10px;">
-                    <div class="f-left">
-                        <div class="f-section" style="background:#222;padding:8px;border-radius:4px;">
-                            <span class="f-section-label" style="color:#aaa;">💡 LED</span>
-                            <div id="obs-led-container" class="f-leds" style="display:flex;flex-wrap:wrap;gap:3px;"></div>
-                        </div>
-                        <div class="f-section" style="background:#222;padding:8px;border-radius:4px;">
-                            <span class="f-section-label" style="color:#aaa;">🔌 开关</span>
-                            <div id="obs-switch-container" class="f-switches" style="display:flex;flex-wrap:wrap;gap:3px;"></div>
-                        </div>
-                    </div>
-                    <div class="f-right">
-                        <div class="f-section" style="background:#222;padding:8px;border-radius:4px;">
-                            <span class="f-section-label" style="color:#aaa;">🔘 独立按键</span>
-                            <div id="obs-btn-container" class="f-buttons" style="display:flex;flex-wrap:wrap;gap:3px;"></div>
-                        </div>
-                        <div class="f-section" style="background:#222;padding:8px;border-radius:4px;">
-                            <span class="f-section-label" style="color:#aaa;">🔢 矩阵按键</span>
-                            <div id="obs-matrix-container" class="f-matrix"></div>
-                        </div>
-                        <div class="f-section" style="background:#222;padding:8px;border-radius:4px;">
-                            <span class="f-section-label" style="color:#aaa;">🔊 蜂鸣器</span>
-                            <div id="obs-buzzer-container" class="f-buzzer"></div>
-                        </div>
-                        <div class="f-section" style="background:#222;padding:8px;border-radius:4px;">
-                            <span class="f-section-label" style="color:#aaa;">🔘 A7按键</span>
-                            <div id="obs-a7btn-container" class="f-buttons"></div>
-                        </div>
-                    </div>
-                </div>
-
-                <div id="obs-waveform-filters" class="waveform-filters" style="margin-bottom:10px;"></div>
-
-                <div style="background:#1a1a2e;border-radius:6px;padding:8px;overflow-y:auto;max-height:300px;">
-                    <canvas id="observeWaveformCanvas" style="width:100%;min-height:200px;"></canvas>
-                </div>
-            </div>
-            <style>
-                .obs-led { width:14px;height:14px;border-radius:50%;background:#444;margin:2px;cursor:default; }
-                .obs-led.on { background:#0f0;box-shadow:0 0 6px #0f0; }
-                .obs-switch { width:16px;height:10px;background:#444;margin:2px;border-radius:2px;cursor:default; }
-                .obs-switch.on { background:#f80; }
-                .obs-btn-indep { width:40px;height:24px;background:#333;border-radius:4px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;cursor:default;border:2px solid #555; }
-                .obs-btn-indep.on { background:#4CAF50;border-color:#4CAF50; }
-                .obs-matrix-grid { display:grid;grid-template-columns:auto repeat(4,20px);gap:2px;font-size:9px; }
-                .obs-matrix-label { display:flex;align-items:center;justify-content:center;color:#666; }
-                .obs-matrix-cell { width:20px;height:16px;background:#333;border-radius:2px;cursor:default; }
-                .obs-matrix-cell.on { background:#FF9800; }
-                .obs-buzzer-icon { width:30px;height:30px;background:#444;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;cursor:default;border:2px solid #555; }
-                .obs-buzzer-icon.on { background:#f44336;border-color:#f44336;animation:obs-buzzer-pulse 0.3s infinite; }
-                @keyframes obs-buzzer-pulse { 0%,100%{transform:scale(1);} 50%{transform:scale(1.1);} }
-                .obs-digit { width:24px;height:36px;background:#222;border-radius:3px;position:relative;margin:2px; }
-                .obs-digit .segment { position:absolute;background:#333; }
-                .obs-digit .segment.on { background:#f00; }
-                .obs-segment-a { width:14px;height:3px;top:2px;left:2px; }
-                .obs-segment-b { width:3px;height:14px;top:2px;right:2px; }
-                .obs-segment-c { width:3px;height:14px;bottom:8px;right:2px; }
-                .obs-segment-d { width:14px;height:3px;bottom:2px;left:2px; }
-                .obs-segment-e { width:3px;height:14px;bottom:8px;left:2px; }
-                .obs-segment-f { width:3px;height:14px;top:2px;left:2px; }
-                .obs-segment-g { width:14px;height:3px;top:16px;left:2px; }
-                .f-leds, .f-switches, .f-buttons { display:flex;flex-wrap:wrap;gap:4px;margin-top:6px; }
-                .f-matrix { margin-top:6px; }
-                .f-buzzer { margin-top:6px; }
-                .waveform-filters { display:flex;flex-wrap:wrap;gap:6px; }
-                .filter-label { background:#333;padding:3px 8px;border-radius:3px;font-size:11px;color:#aaa;cursor:default; }
-                .filter-label.checked { background:#00E676;color:#000; }
-            </style>
-        `;
-
-        modal.style.display = 'flex';
-
-        this.initObservePanel();
-
-        this.observeVisualizer = new ObserveVisualizer('observeWaveformCanvas');
-
-        this.observeHandler = (data) => {
-            if (data.deviceId !== this.observingDeviceId) return;
-            if (data.type === 'waveform_update' && data.waveforms) {
-                this.observeVisualizer.appendWaveform(data.waveforms, data.pinMapping);
-                this.mapWaveformsToUI(data.waveforms, data.pinMapping);
-                this.updateObserveFilters(data.pinMapping);
-            }
-        };
-
-        this.app.socket.on('device-update', this.observeHandler);
-    }
-
-    closeObserveModal() {
-        if (this.observeHandler) {
-            this.app.socket.off('device-update', this.observeHandler);
-            this.observeHandler = null;
-        }
-        this.observingDeviceId = null;
-        if (this.observeVisualizer) {
-            this.observeVisualizer.resetView();
-            this.observeVisualizer = null;
-        }
-    }
-
-    initObservePanel() {
-        const ledContainer = document.getElementById('obs-led-container');
-        const switchContainer = document.getElementById('obs-switch-container');
-        const btnContainer = document.getElementById('obs-btn-container');
-        const matrixContainer = document.getElementById('obs-matrix-container');
-        const buzzerContainer = document.getElementById('obs-buzzer-container');
-        const a7btnContainer = document.getElementById('obs-a7btn-container');
-        const digitContainer = document.getElementById('obs-digit-container');
-
-        ledContainer.innerHTML = '';
-        switchContainer.innerHTML = '';
-        btnContainer.innerHTML = '';
-        matrixContainer.innerHTML = '';
-        buzzerContainer.innerHTML = '';
-        a7btnContainer.innerHTML = '';
-        digitContainer.innerHTML = '';
-
-        for (let i = 0; i < 32; i++) {
-            const led = document.createElement('div');
-            led.id = `obs-led${i}`;
-            led.className = 'obs-led off';
-            led.innerHTML = `<span style="font-size:8px;color:#888;">${i}</span>`;
-            ledContainer.appendChild(led);
-        }
-
-        for (let i = 0; i < 32; i++) {
-            const sw = document.createElement('div');
-            sw.id = `obs-sw${i}`;
-            sw.className = 'obs-switch off';
-            sw.innerHTML = `<span style="font-size:8px;color:#888;">${i}</span>`;
-            switchContainer.appendChild(sw);
-        }
-
-        for (let i = 0; i < 4; i++) {
-            const btn = document.createElement('div');
-            btn.id = `obs-btn${i}`;
-            btn.className = 'obs-btn-indep off';
-            btn.textContent = `${i}`;
-            btnContainer.appendChild(btn);
-        }
-
-        const matrixGrid = document.createElement('div');
-        matrixGrid.className = 'obs-matrix-grid';
-        matrixGrid.innerHTML = '<div class="obs-matrix-label"></div><div class="obs-matrix-label">0</div><div class="obs-matrix-label">1</div><div class="obs-matrix-label">2</div><div class="obs-matrix-label">3</div>';
-        for (let row = 0; row < 4; row++) {
-            const rowLabel = document.createElement('div');
-            rowLabel.className = 'obs-matrix-label';
-            rowLabel.textContent = `${row}`;
-            matrixGrid.appendChild(rowLabel);
-            for (let col = 0; col < 4; col++) {
-                const cell = document.createElement('div');
-                cell.id = `obs-matrix_${row}_${col}`;
-                cell.className = 'obs-matrix-cell off';
-                matrixGrid.appendChild(cell);
-            }
-        }
-        matrixContainer.appendChild(matrixGrid);
-
-        const buzzer = document.createElement('div');
-        buzzer.id = 'obs-buzzer100';
-        buzzer.className = 'obs-buzzer-icon off';
-        buzzer.textContent = '🔊';
-        buzzerContainer.appendChild(buzzer);
-
-        for (let i = 101; i <= 102; i++) {
-            const btn = document.createElement('div');
-            btn.id = `obs-a7btn${i}`;
-            btn.className = 'obs-btn-indep off';
-            btn.textContent = `A7-${i}`;
-            a7btnContainer.appendChild(btn);
-        }
-
-        for (let i = 0; i < 8; i++) {
-            const digit = document.createElement('div');
-            digit.id = `obs-digit${i}`;
-            digit.className = 'obs-digit';
-            digit.innerHTML = `
-                <div class="segment obs-segment-a" data-segment="a"></div>
-                <div class="segment obs-segment-b" data-segment="b"></div>
-                <div class="segment obs-segment-c" data-segment="c"></div>
-                <div class="segment obs-segment-d" data-segment="d"></div>
-                <div class="segment obs-segment-e" data-segment="e"></div>
-                <div class="segment obs-segment-f" data-segment="f"></div>
-                <div class="segment obs-segment-g" data-segment="g"></div>
-            `;
-            digitContainer.appendChild(digit);
-        }
-    }
-
-    calculateInstantState(channelData) {
-        if (!channelData || channelData.length === 0) {
-            return false;
-        }
-
-        const lastPointsCount = Math.min(10, channelData.length);
-        const lastPoints = channelData.slice(-lastPointsCount);
-
-        let zerosCount = 0;
-        let onesCount = 0;
-
-        for (let i = 0; i < lastPoints.length; i++) {
-            if (lastPoints[i] === 1) {
-                onesCount++;
-            } else if (lastPoints[i] === 0) {
-                zerosCount++;
-            }
-        }
-
-        if (onesCount > zerosCount) {
-            return true;
-        } else if (zerosCount > onesCount) {
-            return false;
-        } else {
-            return channelData[channelData.length - 1] === 1;
-        }
-    }
-
-    mapWaveformsToUI(waveforms, pinMapping) {
-        if (!waveforms || !Array.isArray(waveforms)) {
-            return;
-        }
-
-        if (!pinMapping || !Array.isArray(pinMapping)) {
-            console.warn('[Observe UI Warning] pinMapping undefined or not array');
-            return;
-        }
-
-        for (let index = 0; index < waveforms.length; index++) {
-            const channelData = waveforms[index];
-            if (!channelData || channelData.length === 0) continue;
-
-            let pinInfo = pinMapping[index];
-            let pinName;
-            if (typeof pinInfo === 'string') {
-                pinName = pinInfo;
-            } else if (pinInfo && typeof pinInfo === 'object') {
-                pinName = pinInfo.name || pinInfo.pin || pinInfo.pinName;
-            }
-
-            if (!pinName) continue;
-
-            const isOn = this.calculateInstantState(channelData);
-
-            if (pinName.match(/^LED\d+$/i)) {
-                const ledIndex = parseInt(pinName.replace(/\D/g, ''), 10);
-                const el = document.getElementById(`obs-led${ledIndex}`);
-                if (el) {
-                    el.classList.toggle('on', isOn);
-                    el.classList.toggle('off', !isOn);
-                }
-            } else if (pinName.match(/^SW\d+$/i)) {
-                const swIndex = parseInt(pinName.replace(/\D/g, ''), 10);
-                const el = document.getElementById(`obs-sw${swIndex}`);
-                if (el) {
-                    el.classList.toggle('on', isOn);
-                    el.classList.toggle('off', !isOn);
-                }
-            } else if (pinName.match(/^BTN\d+$/i) || pinName.match(/^KEY\d+$/i)) {
-                const btnIndex = parseInt(pinName.replace(/\D/g, ''), 10);
-                if (btnIndex >= 0 && btnIndex <= 3) {
-                    const el = document.getElementById(`obs-btn${btnIndex}`);
-                    if (el) {
-                        el.classList.toggle('on', isOn);
-                        el.classList.toggle('off', !isOn);
-                    }
-                }
-            } else if (pinName.match(/^A7_BTN\d+$/i)) {
-                const a7Index = parseInt(pinName.substring(6), 10);
-                if (!isNaN(a7Index)) {
-                    const mappedId = a7Index === 0 ? 101 : (a7Index === 1 ? 102 : 101 + a7Index);
-                    const el = document.getElementById(`obs-a7btn${mappedId}`);
-                    if (el) {
-                        el.classList.toggle('on', isOn);
-                        el.classList.toggle('off', !isOn);
-                    }
-                }
-            } else if (pinName.match(/^DIGIT_\d+_[A-Ga-g]$/)) {
-                const digitMatch = pinName.match(/^DIGIT_(\d+)_([A-Ga-g])$/);
-                if (digitMatch) {
-                    const digitIndex = parseInt(digitMatch[1], 10);
-                    const segmentName = digitMatch[2].toLowerCase();
-                    const digitEl = document.getElementById(`obs-digit${digitIndex}`);
-                    if (digitEl) {
-                        const segmentEl = digitEl.querySelector(`.obs-segment-${segmentName}`);
-                        if (segmentEl) {
-                            segmentEl.classList.toggle('on', isOn);
-                            segmentEl.classList.toggle('off', !isOn);
-                        }
-                    }
-                }
-            } else if (pinName.match(/^ROW\d+$/i)) {
-                const rowIndex = parseInt(pinName.substring(3), 10);
-                if (!isNaN(rowIndex)) {
-                    for (let col = 0; col < 4; col++) {
-                        const cellEl = document.getElementById(`obs-matrix_${rowIndex}_${col}`);
-                        if (cellEl) {
-                            cellEl.classList.toggle('on', isOn);
-                            cellEl.classList.toggle('off', !isOn);
-                        }
-                    }
-                }
-            } else if (pinName.match(/^COL\d+$/i)) {
-                const colIndex = parseInt(pinName.substring(3), 10);
-                if (!isNaN(colIndex)) {
-                    for (let row = 0; row < 4; row++) {
-                        const cellEl = document.getElementById(`obs-matrix_${row}_${colIndex}`);
-                        if (cellEl) {
-                            cellEl.classList.toggle('on', isOn);
-                            cellEl.classList.toggle('off', !isOn);
-                        }
-                    }
-                }
-            } else if (pinName.match(/^BUZZER$/i)) {
-                const buzzerEl = document.getElementById('obs-buzzer100');
-                if (buzzerEl) {
-                    buzzerEl.classList.toggle('on', isOn);
-                    buzzerEl.classList.toggle('off', !isOn);
-                }
-            }
-        }
-    }
-
-    updateObserveFilters(pinMapping) {
-        const filterContainer = document.getElementById('obs-waveform-filters');
-        if (!filterContainer || !pinMapping) return;
-
-        if (filterContainer.dataset.initialized === 'true') return;
-
-        filterContainer.innerHTML = '';
-        const visibility = [];
-
-        pinMapping.forEach((pinName, index) => {
-            const label = document.createElement('label');
-            label.className = 'filter-label checked';
-            label.textContent = pinName;
-            visibility.push(true);
-            filterContainer.appendChild(label);
-        });
-
-        if (this.observeVisualizer) {
-            this.observeVisualizer.setChannelVisibility(visibility);
-        }
-        filterContainer.dataset.initialized = 'true';
-    }
-
-    mapWaveformsToPanel(waveforms, pinMapping) {
-        this.mapWaveformsToUI(waveforms, pinMapping);
-    }
-
     onShow() {
+        if (this.app.teacherWaveform) {
+            setTimeout(() => {
+                this.app.teacherWaveform.resizeCanvas();
+                this.app.teacherWaveform.redraw();
+            }, 50);
+        }
         // 切换到设备监控时加载概览数据
         this.app.apiCall('/devices/overview')
             .then(res => {
@@ -1170,9 +920,8 @@ class ExperimentBuilderModule {
             difficulty_level: formData.get('difficulty_level') || 'medium',
             estimated_duration: parseInt(formData.get('estimated_duration')) || 60,
             instructions: formData.get('description') || '',
-            sample_clock_source: formData.get('sample_clock_source') || 'external',
+            sample_clock_source: formData.get('sample_clock_source') || '50Hz',
             trigger_condition: formData.get('trigger_condition') || '0x0000',
-            sample_length: parseInt(formData.get('sample_length')) || 32,
             is_public: formData.get('is_public') === 'true',
             is_classic: formData.get('is_classic') === 'true'
         };
@@ -1267,7 +1016,7 @@ class ExperimentBuilderModule {
                     <div class="experiment-meta">
                         <span class="difficulty ${difficultyClass}">${exp.difficulty_level}</span>
                         <span>⏱️ ${exp.estimated_duration || 60}分钟</span>
-                        <span>📌 ${exp.sample_length || 32}包</span>
+                        <span>📌 ${exp.packet_count || exp.sample_length || 32}包</span>
                     </div>
                     <div class="experiment-pins" style="margin-top:8px;font-size:12px;color:#888;">
                         目标引脚: ${targetPinsDisplay}
@@ -1335,11 +1084,17 @@ class ExperimentBuilderModule {
                         <label for="expDuration">预计时长(分钟)</label>
                         <input type="number" id="expDuration" name="estimated_duration" value="${exp.estimated_duration || 60}" min="15" max="240">
                     </div>
-                </div>
-
-                <div class="form-group">
-                    <label for="sampleLength">采样深度(包数量)</label>
-                    <input type="number" id="sampleLength" name="sample_length" value="${exp.sample_length || 32}" min="1" max="65536">
+                    <div class="form-group">
+                        <label for="expClock">采样时钟来源</label>
+                        <select id="expClock" name="sample_clock_source">
+                            <option value="50Hz" ${(exp.sample_clock || exp.sample_clock_source) === '50Hz' ? 'selected' : ''}>50Hz</option>
+                            <option value="100Hz" ${(exp.sample_clock || exp.sample_clock_source) === '100Hz' ? 'selected' : ''}>100Hz</option>
+                            <option value="1kHz" ${(exp.sample_clock || exp.sample_clock_source) === '1kHz' ? 'selected' : ''}>1kHz</option>
+                            <option value="10kHz" ${(exp.sample_clock || exp.sample_clock_source) === '10kHz' ? 'selected' : ''}>10kHz</option>
+                            <option value="100kHz" ${(exp.sample_clock || exp.sample_clock_source) === '100kHz' ? 'selected' : ''}>100kHz</option>
+                            <option value="500kHz" ${(exp.sample_clock || exp.sample_clock_source) === '500kHz' ? 'selected' : ''}>500kHz</option>
+                        </select>
+                    </div>
                 </div>
 
                 <div class="form-group">
@@ -1364,8 +1119,32 @@ class ExperimentBuilderModule {
                         <div class="pins-category">
                             <span class="pins-category-title">BTN</span>
                             <div class="pins-options">
-                                ${['BTN0','BTN1','BTN2','BTN3'].map(btn =>
+                                ${['BTN0','BTN1','BTN2','BTN3','BTN4','BTN5'].map(btn =>
                                     `<label class="pin-checkbox"><input type="checkbox" name="target_pins" value="${btn}" ${(exp.target_pins || []).includes(btn) ? 'checked' : ''}> ${btn}</label>`
+                                ).join('')}
+                            </div>
+                        </div>
+                        <div class="pins-category">
+                            <span class="pins-category-title">7段数码管段选</span>
+                            <div class="pins-options">
+                                ${['SEG_A','SEG_B','SEG_C','SEG_D','SEG_E','SEG_F','SEG_G'].map(seg =>
+                                    `<label class="pin-checkbox"><input type="checkbox" name="target_pins" value="${seg}" ${(exp.target_pins || []).includes(seg) ? 'checked' : ''}> ${seg}</label>`
+                                ).join('')}
+                            </div>
+                        </div>
+                        <div class="pins-category">
+                            <span class="pins-category-title">7段数码管位选</span>
+                            <div class="pins-options">
+                                ${['DIG0','DIG1','DIG2','DIG3','DIG4','DIG5','DIG6','DIG7'].map(dig =>
+                                    `<label class="pin-checkbox"><input type="checkbox" name="target_pins" value="${dig}" ${(exp.target_pins || []).includes(dig) ? 'checked' : ''}> ${dig}</label>`
+                                ).join('')}
+                            </div>
+                        </div>
+                        <div class="pins-category">
+                            <span class="pins-category-title">蜂鸣器</span>
+                            <div class="pins-options">
+                                ${['BUZZER'].map(buzzer =>
+                                    `<label class="pin-checkbox"><input type="checkbox" name="target_pins" value="${buzzer}" ${(exp.target_pins || []).includes(buzzer) ? 'checked' : ''}> ${buzzer}</label>`
                                 ).join('')}
                             </div>
                         </div>
@@ -1411,7 +1190,7 @@ class ExperimentBuilderModule {
             category: formData.get('category'),
             difficulty_level: formData.get('difficulty_level'),
             estimated_duration: parseInt(formData.get('estimated_duration')),
-            sample_length: parseInt(formData.get('sample_length')),
+            sample_clock_source: formData.get('sample_clock_source'),
             is_public: formData.get('is_public') === 'true',
             is_classic: formData.get('is_classic') === 'true'
         };
@@ -1810,7 +1589,7 @@ class ClassManagerModule {
                             开始: ${sub.started_at ? new Date(sub.started_at).toLocaleString() : '-'}
                         </span>
                     </div>
-                    <button class="btn btn-small btn-info" onclick="window.teacherApp.modules.classes.viewSubmissionWaveform(${sub.id})">📈 查看波形</button>
+                    <button class="btn btn-small btn-success" onclick="window.teacherApp.modules.classes.generateWaveformFile(${sub.id}, '${sub.started_at || ''}')">💾 生成文件</button>
                 </div>
             `).join('');
         } catch (error) {
@@ -1819,54 +1598,67 @@ class ClassManagerModule {
         }
     }
 
-    async viewSubmissionWaveform(submissionId) {
-        const modal = document.getElementById('modalOverlay');
-        const title = document.getElementById('modalTitle');
-        const body = document.getElementById('modalBody');
-
-        title.textContent = `波形详情 - 提交 #${submissionId}`;
-        body.innerHTML = `
-            <div id="waveformViewerContainer">
-                <div class="submissions-loading">加载波形数据...</div>
-            </div>
-        `;
-
-        modal.style.display = 'flex';
+    async generateWaveformFile(submissionId, startedAt) {
+        const btn = event.currentTarget;
+        const originalText = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = '生成中...';
 
         try {
             const result = await this.app.apiCall(`/experiments/submissions/${submissionId}`);
 
-            const container = document.getElementById('waveformViewerContainer');
-
-            if (!result.success || !result.data || result.data.length === 0) {
-                container.innerHTML = '<div class="student-empty">暂无波形数据</div>';
+            if (!result.success) {
+                alert('获取波形数据失败：' + result.error);
                 return;
             }
 
-            const waveforms = result.data[0].waveforms;
-            const pinMapping = result.pin_mapping || [];
-
-            if (!waveforms || !Array.isArray(waveforms) || waveforms.length === 0) {
-                container.innerHTML = '<div class="student-empty">波形数据格式错误</div>';
+            const dataRecord = result.data?.[0];
+            if (!dataRecord || !dataRecord.waveforms || dataRecord.waveforms.length === 0) {
+                alert('该提交记录暂无波形数据');
                 return;
             }
 
-            container.innerHTML = `
-                <div style="margin-bottom:15px;">
-                    <strong>通道数:</strong> ${waveforms.length} | 
-                    <strong>采样点数:</strong> ${waveforms[0]?.length || 0}
-                </div>
-                <div style="background:#1a1a2e;border-radius:6px;padding:8px;overflow-y:auto;max-height:400px;">
-                    <canvas id="replayWaveformCanvas" style="width:100%;min-height:300px;"></canvas>
-                </div>
-            `;
+            const waveforms = dataRecord.waveforms;
+            const pinMapping = (dataRecord.pin_mapping && dataRecord.pin_mapping.length > 0)
+                ? dataRecord.pin_mapping
+                : (result.pin_mapping || []);
 
-            const visualizer = new ObserveVisualizer('replayWaveformCanvas');
-            visualizer.appendWaveform(waveforms, pinMapping);
+            const exportData = {
+                version: '1.0',
+                submission_id: submissionId,
+                started_at: startedAt,
+                exported_at: new Date().toISOString(),
+                channel_count: waveforms.length,
+                sample_count: waveforms[0]?.length || 0,
+                pin_mapping: pinMapping,
+                waveforms: waveforms
+            };
+
+            const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+            const fileName = `waveform_submission_${submissionId}_${dateStr}.json`;
+
+            const jsonStr = JSON.stringify(exportData, null, 2);
+            const blob = new Blob([jsonStr], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            btn.textContent = '✅ 已生成';
+            setTimeout(() => {
+                btn.textContent = originalText;
+                btn.disabled = false;
+            }, 2000);
 
         } catch (error) {
-            console.error('加载波形失败:', error);
-            container.innerHTML = '<div class="student-empty">加载失败</div>';
+            console.error('生成波形文件失败:', error);
+            alert('生成文件失败：' + error.message);
+            btn.disabled = false;
+            btn.textContent = originalText;
         }
     }
 

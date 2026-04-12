@@ -396,7 +396,7 @@ router.get('/stats', authenticate, authorize(['teacher', 'admin']), async (req, 
         const pool = db.getPool();
         const [stats] = await pool.execute(`
             SELECT COUNT(*) as total_records,
-                   SUM(LENGTH(raw_hex_data)) as total_bytes,
+                   SUM(LENGTH(waveforms_json)) as total_bytes,
                    COUNT(DISTINCT device_id) as devices_with_data,
                    COUNT(DISTINCT submission_id) as submissions_with_data
             FROM experiment_data

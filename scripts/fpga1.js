@@ -111,7 +111,7 @@ function stopCapture() {
     console.log('⏹️ 已停止采集');
 }
 
-let dataBuffer = '';
+let dataBuffer = Buffer.alloc(0);
 
 function sendLargePacket(seq) {
     const packetCount = requestedPins.length;

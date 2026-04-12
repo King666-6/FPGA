@@ -295,17 +295,35 @@ router.get('/submissions/:submissionId', authenticate, async (req, res) => {
 
         const data = await DataRecord.getSubmissionRecords(submissionId);
 
-        const firstRecord = data[0];
-        const pinMapping = firstRecord?.waveforms ?
-            (await pool.execute('SELECT pin_mapping_json FROM experiment_data WHERE submission_id = ? ORDER BY timestamp ASC LIMIT 1', [submissionId]))[0][0]?.pin_mapping_json
-            : null;
+        if (data.length === 0 && submission.device_id) {
+            const [fallbackRows] = await pool.execute(
+                `SELECT id, timestamp, waveforms_json, pin_mapping_json
+                 FROM experiment_data
+                 WHERE device_id = ?
+                   AND submission_id IS NULL
+                   AND timestamp >= DATE_SUB(?, INTERVAL 1 HOUR)
+                 ORDER BY timestamp ASC`,
+                [submission.device_id, submission.started_at || new Date()]
+            );
+
+            if (fallbackRows.length > 0) {
+                const fallbackData = fallbackRows.map(row => ({
+                    id: row.id,
+                    timestamp: row.timestamp,
+                    waveforms: DataRecord._safeJsonParse(row.waveforms_json),
+                    pin_mapping: DataRecord._safeJsonParse(row.pin_mapping_json) || [],
+                    is_fallback: true
+                }));
+                data.push(...fallbackData);
+            }
+        }
 
         res.json({
             success: true,
             submission: submission,
             data: data,
             data_count: data.length,
-            pin_mapping: pinMapping ? JSON.parse(pinMapping) : []
+            pin_mapping: data[0]?.pin_mapping || []
         });
 
     } catch (error) {
@@ -457,62 +475,69 @@ router.post('/submissions/create-with-waveform', authenticate, isStudent, async 
             return res.status(400).json({ success: false, error: '设备ID和波形数据不能为空' });
         }
 
-        const [deviceRows] = await pool.execute(
-            'SELECT id FROM devices WHERE device_id = ?',
-            [device_id]
-        );
-        if (deviceRows.length === 0) {
-            return res.status(404).json({ success: false, error: '设备不存在' });
-        }
-        const deviceDbId = deviceRows[0].id;
+        const connection = await pool.getConnection();
+        await connection.beginTransaction();
 
-        let finalExperimentId = experiment_id || null;
-        if (finalExperimentId) {
-            const [expRows] = await pool.execute(
-                'SELECT id FROM experiments WHERE id = ?',
-                [finalExperimentId]
+        try {
+            const deviceDbId = await DataRecord._getOrCreateDevice(device_id);
+
+            let finalExperimentId = experiment_id || null;
+            if (finalExperimentId) {
+                const [expRows] = await connection.execute(
+                    'SELECT id FROM experiments WHERE id = ?',
+                    [finalExperimentId]
+                );
+                if (expRows.length === 0) {
+                    await connection.rollback();
+                    connection.release();
+                    return res.status(404).json({ success: false, error: '实验不存在' });
+                }
+            }
+
+            const [submissionResult] = await connection.execute(
+                `INSERT INTO experiment_submissions
+                 (student_id, experiment_id, device_id, class_id, status, started_at, submitted_at)
+                 VALUES (?, ?, ?, ?, 'submitted', NOW(), NOW())`,
+                [req.user.id, finalExperimentId, deviceDbId, class_id || null]
             );
-            if (expRows.length === 0) {
-                return res.status(404).json({ success: false, error: '实验不存在' });
-            }
+            const submissionId = submissionResult.insertId;
+
+            const channelCount = waveforms.length;
+            const sampleCount = waveforms[0]?.length || 0;
+            const pinMappingStr = JSON.stringify(pin_mapping || []);
+            const waveformsStr = JSON.stringify(waveforms);
+
+            await connection.execute(
+                `INSERT INTO experiment_data
+                 (submission_id, device_id, timestamp, pin_mapping_json, waveforms_json, sample_count, channel_count)
+                 VALUES (?, ?, NOW(), ?, ?, ?, ?)`,
+                [submissionId, deviceDbId, pinMappingStr, waveformsStr, sampleCount, channelCount]
+            );
+
+            await connection.commit();
+            connection.release();
+
+            await pool.execute(
+                `INSERT INTO system_logs (user_id, action_type, action_description)
+                 VALUES (?, 'submit_waveform', ?)`,
+                [req.user.id, `学生提交波形数据: submission_id=${submissionId}, 通道数=${channelCount}, 采样点数=${sampleCount}`]
+            );
+
+            res.status(201).json({
+                success: true,
+                message: '波形数据提交成功',
+                data: {
+                    submission_id: submissionId,
+                    channel_count: channelCount,
+                    sample_count: sampleCount
+                }
+            });
+
+        } catch (innerError) {
+            await connection.rollback();
+            connection.release();
+            throw innerError;
         }
-
-        // 注意：experiment_id 字段现在允许为 NULL，因此 finalExperimentId 可以为 null
-        const [submissionResult] = await pool.execute(
-            `INSERT INTO experiment_submissions
-             (student_id, experiment_id, device_id, class_id, status, started_at, submitted_at)
-             VALUES (?, ?, ?, ?, 'submitted', NOW(), NOW())`,
-            [req.user.id, finalExperimentId, deviceDbId, class_id || null]
-        );
-        const submissionId = submissionResult.insertId;
-
-        const channelCount = waveforms.length;
-        const sampleCount = waveforms[0]?.length || 0;
-        const pinMappingStr = JSON.stringify(pin_mapping || []);
-        const waveformsStr = JSON.stringify(waveforms);
-
-        await pool.execute(
-            `INSERT INTO experiment_data
-             (submission_id, device_id, timestamp, pin_mapping_json, waveforms_json, sample_count, channel_count)
-             VALUES (?, ?, NOW(), ?, ?, ?, ?)`,
-            [submissionId, deviceDbId, pinMappingStr, waveformsStr, sampleCount, channelCount]
-        );
-
-        await pool.execute(
-            `INSERT INTO system_logs (user_id, action_type, action_description)
-             VALUES (?, 'submit_waveform', ?)`,
-            [req.user.id, `学生提交波形数据: submission_id=${submissionId}, 通道数=${channelCount}, 采样点数=${sampleCount}`]
-        );
-
-        res.status(201).json({
-            success: true,
-            message: '波形数据提交成功',
-            data: {
-                submission_id: submissionId,
-                channel_count: channelCount,
-                sample_count: sampleCount
-            }
-        });
 
     } catch (error) {
         console.error('提交波形数据错误:', error);

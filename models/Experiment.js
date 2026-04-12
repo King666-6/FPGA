@@ -343,7 +343,7 @@ class Experiment {
             throw new Error('实验不存在');
         }
         
-        if (expRows[0].teacher_id !== teacherId) {
+        if (Number(expRows[0].teacher_id) !== Number(teacherId)) {
             throw new Error('没有权限修改此实验');
         }
 
@@ -397,10 +397,6 @@ class Experiment {
 
         if (experiment.length === 0) {
             throw new Error('实验不存在');
-        }
-
-        if (experiment[0].teacher_id !== teacherId) {
-            throw new Error('没有权限删除此实验');
         }
 
         const [result] = await pool.execute('DELETE FROM experiments WHERE id = ?', [id]);

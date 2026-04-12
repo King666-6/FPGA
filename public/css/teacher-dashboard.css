@@ -402,6 +402,12 @@
     margin-top: 8px;
 }
 
+#teacherWaveformCanvas {
+    width: 100%;
+    background-color: #1a1a1a;
+    border-radius: 4px;
+}
+
 /* ==================== 实验发布中心 ==================== */
 .experiment-builder {
     margin-bottom: 30px;
