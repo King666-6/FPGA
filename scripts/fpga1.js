@@ -92,7 +92,7 @@ function startCapture() {
             } else if (nameUpper.includes('BUZZER')) {
                 pv = loopCounter % 2 === 0 ? 0xFF : 0x00;
             }
-            pld.writeUInt8(pv, 0);
+            pld.fill(pv);
 
             frames.push(Buffer.concat([FRAME_HEADER, seqBuf, pld]));
         }

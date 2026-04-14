@@ -49,7 +49,17 @@ function setupSocket(server, serverType = 'default') {
         // 设备绑定 - 学生端功能
         // =====================================================
         socket.on('bind_device', async (data) => {
-            const deviceId = data.deviceId || 'FPGA_device';
+            let deviceId = data.deviceId || 'FPGA_device';
+
+            if (tcpServerModule) {
+                const tcpMap = tcpServerModule.deviceSocketMap;
+                if (!tcpMap.has(deviceId) && tcpMap.size > 0) {
+                    const firstRealId = tcpMap.keys().next().value;
+                    console.log(`[WS] bind_device: '${deviceId}' 未找到，自动映射到 '${firstRealId}'`);
+                    deviceId = firstRealId;
+                }
+            }
+
             boundDevices.set(socket.id, deviceId);
             deviceToStudentSocket.set(deviceId, socket.id);
 
@@ -103,7 +113,16 @@ function setupSocket(server, serverType = 'default') {
         // 停止采集 - 学生端功能
         // =====================================================
         socket.on('stop_capture', async (data) => {
-            const deviceId = data.deviceId || 'FPGA_device';
+            let deviceId = data.deviceId || 'FPGA_device';
+
+            if (tcpServerModule) {
+                const tcpMap = tcpServerModule.deviceSocketMap;
+                if (!tcpMap.has(deviceId) && tcpMap.size > 0) {
+                    const firstRealId = tcpMap.keys().next().value;
+                    console.log(`[WS] stop_capture: '${deviceId}' 未找到，自动映射到 '${firstRealId}'`);
+                    deviceId = firstRealId;
+                }
+            }
 
             console.log(`⏹️ 收到停止采集请求: deviceId=${deviceId}`);
 

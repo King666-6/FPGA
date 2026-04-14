@@ -208,14 +208,23 @@ class TCPServer {
             chunk[0] === 0xFF && chunk[1] === 0xFE &&
             chunk[2] === 0xCC && chunk[3] === 0xCC) {
 
-            socket.deviceId = 'FPGA_device';
-            parser.deviceId = socket.deviceId;
-            this.deviceSocketMap.set(socket.deviceId, socket);
+            const deviceNumHex = chunk.slice(4, 8)
+                .toString('hex')
+                .toUpperCase();
+            const deviceId = `FPGA_${deviceNumHex}`;
 
-            console.log(`[TCP] 设备注册: ${socket.deviceId}`);
+            socket.deviceId = deviceId;
+            parser.deviceId = deviceId;
+            this.deviceSocketMap.set(deviceId, socket);
+
+            DataRecord._getOrCreateDevice(deviceId).catch(err => {
+                console.error(`[TCP] 设备注册数据库写入失败: ${err.message}`);
+            });
+
+            console.log(`[TCP] 设备注册: ${deviceId}`);
 
             broadcastToTeachers('global-device-status', {
-                deviceId: socket.deviceId,
+                deviceId: deviceId,
                 status: 'online',
                 action: 'device_online',
                 timestamp: new Date().toISOString()

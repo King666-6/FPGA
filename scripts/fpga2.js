@@ -156,7 +156,7 @@ function sendLargePacket(seq) {
 
         const payload = Buffer.alloc(PAYLOAD_SIZE);
         const pinValue = getPinValue(requestedPins[i]);
-        payload.writeUInt8(pinValue, 0);
+        payload.fill(pinValue);
 
         subFrames.push(Buffer.concat([FRAME_HEADER, seqBuf, payload]));
     }

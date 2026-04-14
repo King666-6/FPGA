@@ -98,8 +98,12 @@ class DataParser extends EventEmitter {
             }
 
             const sequence = subFrame.readUInt16BE(6);
-            const dataByte = subFrame[8];
-            const pinState = dataByte === 0xFF ? 1 : 0;
+            const payload = subFrame.slice(8, 72);
+            let highCount = 0;
+            for (let b = 0; b < payload.length; b++) {
+                if (payload[b] === 0xFF) highCount++;
+            }
+            const pinState = (highCount / payload.length) > 0.8 ? 1 : 0;
 
             this.packetCache.set(sequence, pinState);
         }
