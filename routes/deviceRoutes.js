@@ -134,6 +134,35 @@ router.post('/batch/status', authenticate, authorize(['teacher', 'admin']), asyn
     }
 });
 
+// 获取当前 TCP 在线设备列表及分配情况（教师专用）
+router.get('/online-assignments', authenticate, authorize(['teacher', 'admin']), async (req, res) => {
+    try {
+        const { getTCPServer } = require('../utils/tcpServer');
+        const { getDeviceAssignments } = require('../utils/socketManager');
+
+        const tcpServer = getTCPServer();
+        const onlineDeviceIds = tcpServer
+            ? Array.from(tcpServer.deviceSocketMap.keys())
+            : [];
+
+        const assignments = getDeviceAssignments();
+
+        res.json({
+            success: true,
+            data: {
+                onlineDevices: onlineDeviceIds,
+                assignments: assignments
+            }
+        });
+    } catch (error) {
+        console.error('获取在线设备分配情况错误:', error);
+        res.status(500).json({
+            success: false,
+            error: '获取在线设备分配情况失败'
+        });
+    }
+});
+
 // =====================================================
 // 动态路由（参数路由）- 必须放在最后
 // =====================================================

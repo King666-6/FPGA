@@ -628,9 +628,6 @@ class StudentDashboard {
             this.connected = true;
             this.updateConnectionStatus('connected');
             this.updateButtonStates();
-
-            this.socket.emit('bind_device', { deviceId: 'FPGA_device' });
-            console.log('发送 bind_device 事件');
             this.loadExperiments();
         });
 
@@ -650,6 +647,18 @@ class StudentDashboard {
             this.boundDeviceId = data.deviceId;
             this.updateConnectionStatus('device-bound');
             this.updateButtonStates();
+        });
+
+        this.socket.on('device_assigned', (data) => {
+            console.log('Device assigned by teacher:', data);
+            this.boundDeviceId = data.deviceId;
+            this.updateConnectionStatus('device-bound');
+            this.updateButtonStates();
+
+            const statusEl = document.getElementById('wsStatus');
+            if (statusEl) {
+                statusEl.textContent = `已分配设备: ${data.deviceId}`;
+            }
         });
 
         this.socket.on('capture-started', (data) => {

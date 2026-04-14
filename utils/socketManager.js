@@ -9,6 +9,8 @@ const boundDevices = new Map();
 const deviceOnlineStatus = new Map();
 const deviceToStudentSocket = new Map();
 const deviceRequestedPins = new Map();
+const deviceStudentAssignment = new Map();
+const userIdToSocket = new Map();
 
 let tcpServerModule = null;
 
@@ -188,6 +190,7 @@ function setupSocket(server, serverType = 'default') {
                     });
                 } else if (decoded.role === 'student') {
                     socket.join('students');
+                    userIdToSocket.set(decoded.id, socket.id);
                     console.log(`👨‍🎓 学生 ${decoded.username} 加入学生房间`);
                 }
                 
@@ -255,6 +258,27 @@ function setupSocket(server, serverType = 'default') {
             
             console.log(`📴 设备离线: ${deviceId}`);
         });
+
+        // =====================================================
+        // 设备分配 - 教师专用功能
+        // =====================================================
+        socket.on('assign_device_to_student', (data) => {
+            const { deviceId, userId } = data;
+            if (userId) {
+                deviceStudentAssignment.set(deviceId, userId);
+                console.log(`[WS] 教师分配设备 ${deviceId} -> 学生userId: ${userId}`);
+
+                const studentSocketId = userIdToSocket.get(userId);
+                if (studentSocketId && studentIO) {
+                    studentIO.to(studentSocketId).emit('device_assigned', { deviceId });
+                    console.log(`[WS] 已通知学生 userId=${userId} 设备已分配: ${deviceId}`);
+                }
+            } else {
+                deviceStudentAssignment.delete(deviceId);
+                console.log(`[WS] 解除设备 ${deviceId} 的分配`);
+            }
+            socket.emit('assign_result', { success: true, deviceId, userId });
+        });
         
         // =====================================================
         // 断开连接处理
@@ -265,10 +289,15 @@ function setupSocket(server, serverType = 'default') {
             // 从连接用户中移除
             if (socket.user) {
                 connectedUsers.delete(socket.id);
-                
+
                 // 如果是教师断开，从在线列表中移除
                 if (socket.userRole === 'teacher' || socket.userRole === 'admin') {
                     console.log(`👨‍🏫 教师 ${socket.user.username} 已断开连接`);
+                }
+
+                // 如果是学生断开，清理 userIdToSocket
+                if (socket.userRole === 'student') {
+                    userIdToSocket.delete(socket.user.id);
                 }
             }
             
@@ -376,7 +405,13 @@ function broadcastDeviceData(data) {
         teacherIO.to('teachers').emit('device-update', teacherData);
     }
     if (studentIO && studentIO !== teacherIO) {
-        const studentSocketId = deviceToStudentSocket.get(deviceId);
+        const assignedUserId = deviceStudentAssignment.get(deviceId);
+        let studentSocketId = null;
+        if (assignedUserId) {
+            studentSocketId = userIdToSocket.get(assignedUserId);
+        } else {
+            studentSocketId = deviceToStudentSocket.get(deviceId);
+        }
         if (studentSocketId) {
             studentIO.to(studentSocketId).emit('device-update', filteredData);
         }
@@ -424,6 +459,14 @@ function getStudentIO() {
     return studentIO;
 }
 
+function getDeviceAssignments() {
+    const result = {};
+    for (const [deviceId, userId] of deviceStudentAssignment) {
+        result[deviceId] = userId;
+    }
+    return result;
+}
+
 module.exports = setupSocket;
 module.exports.broadcastDeviceData = broadcastDeviceData;
 module.exports.broadcastDeviceStatus = broadcastDeviceStatus;
@@ -433,3 +476,4 @@ module.exports.getIO = getIO;
 module.exports.getTeacherIO = getTeacherIO;
 module.exports.getStudentIO = getStudentIO;
 module.exports.setTCPServer = setTCPServer;
+module.exports.getDeviceAssignments = getDeviceAssignments;

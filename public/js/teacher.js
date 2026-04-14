@@ -248,7 +248,7 @@ class WaveformVisualizer {
                     this.ctx.beginPath();
                     this.ctx.moveTo(screenX, 0);
                     this.ctx.lineTo(screenX, height);
-                    this.stroke();
+                    this.ctx.stroke();
 
                     this.ctx.fillText(x.toString(), screenX + 2, 12);
                 }
@@ -346,6 +346,14 @@ class TeacherApp {
             }
             if (this.modules.dashboard) {
                 this.modules.dashboard.handleStatusUpdate(data);
+            }
+        });
+
+        // 监听分配结果
+        this.socket.on('assign_result', (data) => {
+            if (data.success) {
+                console.log(`[WS] 设备分配结果: ${data.deviceId} -> ${data.userId}`);
+                this.loadDeviceAssignments();
             }
         });
     }
@@ -525,6 +533,65 @@ class TeacherApp {
         }
     }
 
+    async loadDeviceAssignments() {
+        try {
+            const response = await this.apiCall('/devices/online-assignments');
+            if (!response.success) return;
+
+            const { onlineDevices, assignments } = response.data;
+            const tbody = document.getElementById('assignmentTableBody');
+            if (!tbody) return;
+
+            if (onlineDevices.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="3">暂无在线设备</td></tr>';
+                return;
+            }
+
+            const studentsRes = await this.apiCall('/users/search?role=student&limit=100');
+            const students = studentsRes.users || [];
+
+            tbody.innerHTML = onlineDevices.map(deviceId => {
+                const assignedUserId = assignments[deviceId];
+                const assignedStudent = students.find(s => s.id === assignedUserId);
+                const assignedText = assignedStudent
+                    ? `${assignedStudent.real_name || assignedStudent.username} (ID:${assignedUserId})`
+                    : '<span style="color:#999;">未分配</span>';
+
+                return `
+                    <tr>
+                        <td>${deviceId}</td>
+                        <td>${assignedText}</td>
+                        <td>
+                            <select data-device-id="${deviceId}" class="assignment-select">
+                                <option value="">-- 未分配 --</option>
+                                ${students.map(s => `
+                                    <option value="${s.id}" ${s.id === assignedUserId ? 'selected' : ''}>
+                                        ${s.real_name || s.username} (ID:${s.id})
+                                    </option>
+                                `).join('')}
+                            </select>
+                            <button class="btn btn-small" onclick="window.teacherApp.assignDevice('${deviceId}', this.previousElementSibling.value)">分配</button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+
+            document.getElementById('refreshAssignmentBtn')?.addEventListener('click', () => {
+                this.loadDeviceAssignments();
+            });
+
+        } catch (error) {
+            console.error('加载设备分配信息失败:', error);
+        }
+    }
+
+    async assignDevice(deviceId, userId) {
+        userId = userId || null;
+        if (this.socket) {
+            this.socket.emit('assign_device_to_student', { deviceId, userId });
+        }
+    }
+
     switchModule(moduleName) {
         // 更新导航状态
         document.querySelectorAll('.nav-item').forEach(item => {
@@ -695,6 +762,7 @@ class DashboardModule {
 
     onShow() {
         this.loadData();
+        this.app.loadDeviceAssignments();
     }
 }
 

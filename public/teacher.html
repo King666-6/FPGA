@@ -140,7 +140,32 @@
                         </div>
                     </div>
                 </div>
-                
+
+                <div class="card" id="deviceAssignmentCard">
+                    <div class="card-header">
+                        <h3>📱 设备分配管理</h3>
+                        <button class="btn btn-small" id="refreshAssignmentBtn">🔄 刷新</button>
+                    </div>
+                    <div class="card-body">
+                        <div id="assignmentTableContainer">
+                            <table class="data-table" id="assignmentTable">
+                                <thead>
+                                    <tr>
+                                        <th>在线设备ID</th>
+                                        <th>分配状态</th>
+                                        <th>操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="assignmentTableBody">
+                                    <tr>
+                                        <td colspan="3" class="table-loading">加载中...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="card" style="margin-top: 20px;">
                     <div class="card-header">
                         <h3>🧪 实验列表</h3>

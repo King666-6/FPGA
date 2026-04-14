@@ -172,7 +172,7 @@ function startCaptureV2() {
 client.connect(TCP_PORT, TCP_HOST, () => {
     console.log(`✅ 已连接到服务器 ${TCP_HOST}:${TCP_PORT}`);
 
-    const regPacket = Buffer.from([0xFF, 0xFE, 0xCC, 0xCC, 0x00, 0x11, 0x22, 0x33]);
+    const regPacket = Buffer.from([0xFF, 0xFE, 0xCC, 0xCC, 0xFF, 0x11, 0x22, 0x33]);
     client.write(regPacket);
     console.log('📝 已发送设备注册信息，等待网页端下发采集指令...');
 });
