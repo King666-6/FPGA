@@ -240,6 +240,11 @@
                         <input type="file" id="replayWaveformFile" accept=".json"
                                style="display:none;"
                                title="选择波形JSON文件">
+                        <label style="margin-left:16px;">监控设备：</label>
+                        <select id="waveformDeviceSelect" style="padding:4px 8px;border-radius:4px;border:1px solid #ddd;">
+                            <option value="all">全部设备</option>
+                        </select>
+                        <button id="clearWaveformBtn" class="btn btn-small" style="margin-left:8px;">🗑 清空波形</button>
                     </div>
                     <div id="teacherWaveformFilters" class="waveform-filters"></div>
                     <div class="f-canvas-container" style="height:400px; background:#1a1a1a; border-radius:4px;">

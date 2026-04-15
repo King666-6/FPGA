@@ -423,9 +423,28 @@ class TeacherApp {
         this.teacherWaveform.setChannelVisibility(visibility);
     }
 
+    addDeviceToWaveformSelect(deviceId) {
+        const sel = document.getElementById('waveformDeviceSelect');
+        if (!sel || sel.querySelector(`option[value="${deviceId}"]`)) return;
+        const opt = document.createElement('option');
+        opt.value = deviceId;
+        opt.textContent = deviceId;
+        sel.appendChild(opt);
+    }
+
+    removeDeviceFromWaveformSelect(deviceId) {
+        const sel = document.getElementById('waveformDeviceSelect');
+        sel?.querySelector(`option[value="${deviceId}"]`)?.remove();
+    }
+
     initGlobalDeviceUpdateListener() {
         this.socket.on('device-update', (data) => {
             if (this.currentWaveSource === 'live' && data.waveforms) {
+                const selectedDevice = document.getElementById('waveformDeviceSelect')?.value;
+                if (selectedDevice && selectedDevice !== 'all' && selectedDevice !== data.deviceId) {
+                    return;
+                }
+
                 if (this.teacherWaveform.canvas.width === 0) {
                     this.teacherWaveform.resizeCanvas();
                 }
@@ -474,6 +493,15 @@ class TeacherApp {
                     filterContainer.innerHTML = '';
                 }
             });
+        });
+
+        document.getElementById('clearWaveformBtn')?.addEventListener('click', () => {
+            this.teacherWaveform.resetView();
+            const filterContainer = document.getElementById('teacherWaveformFilters');
+            if (filterContainer) {
+                filterContainer.innerHTML = '';
+                filterContainer.dataset.lastMapping = '';
+            }
         });
 
         document.getElementById('replayWaveformFile')?.addEventListener('change', (e) => {
@@ -788,14 +816,17 @@ class DeviceMonitorModule {
 
     handleStatusUpdate(data) {
         const { deviceId, status, action, requestedPins } = data;
-        
-        if (action === 'device_online' || action === 'device_offline') {
+
+        if (action === 'device_online') {
             this.devices.set(deviceId, {
                 deviceId,
                 status,
                 lastSeen: data.timestamp,
                 isCapturing: false
             });
+            window.teacherApp.addDeviceToWaveformSelect(deviceId);
+        } else if (action === 'device_offline') {
+            window.teacherApp.removeDeviceFromWaveformSelect(deviceId);
         } else if (action === 'start_capture') {
             const device = this.devices.get(deviceId) || { deviceId };
             device.status = 'capturing';

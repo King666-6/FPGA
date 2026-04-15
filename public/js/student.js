@@ -575,13 +575,18 @@ class StudentDashboard {
     startCustomCapture(pins) {
         if (!this.socket || !this.connected) return;
 
+        if (!this.boundDeviceId) {
+            alert('请等待教师分配设备后再开始采集');
+            return;
+        }
+
         console.log('发送自定义采集指令, pins:', pins);
 
         this.activeCapturePins = pins;
         this.applyPanelFilter(pins);
 
         this.socket.emit('start_capture', {
-            deviceId: this.boundDeviceId || 'FPGA_device',
+            deviceId: this.boundDeviceId,
             requestedPins: pins
         });
 
@@ -629,6 +634,15 @@ class StudentDashboard {
             this.updateConnectionStatus('connected');
             this.updateButtonStates();
             this.loadExperiments();
+
+            const token = localStorage.getItem('token');
+            if (token) {
+                this.socket.emit('authenticate', { token });
+            }
+        });
+
+        this.socket.on('authenticated', (data) => {
+            console.log('Socket authenticated:', data.message);
         });
 
         this.socket.on('disconnect', () => {
@@ -692,6 +706,11 @@ class StudentDashboard {
     startCapture() {
         if (!this.socket || !this.connected) return;
 
+        if (!this.boundDeviceId) {
+            alert('请等待教师分配设备后再开始采集');
+            return;
+        }
+
         let requestedPins;
         let experimentId = 0;
 
@@ -715,7 +734,7 @@ class StudentDashboard {
         this.applyPanelFilter(requestedPins);
 
         this.socket.emit('start_capture', {
-            deviceId: this.boundDeviceId || 'FPGA_device',
+            deviceId: this.boundDeviceId,
             requestedPins: requestedPins,
             experimentId: experimentId,
             clockSource: this.selectedExperiment?.sample_clock_source || '50Hz',

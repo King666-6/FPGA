@@ -272,6 +272,8 @@ function setupSocket(server, serverType = 'default') {
                 if (studentSocketId && studentIO) {
                     studentIO.to(studentSocketId).emit('device_assigned', { deviceId });
                     console.log(`[WS] 已通知学生 userId=${userId} 设备已分配: ${deviceId}`);
+                } else {
+                    console.warn(`[WARN] 学生 userId=${userId} 尚未建立 WS 连接`);
                 }
             } else {
                 deviceStudentAssignment.delete(deviceId);
