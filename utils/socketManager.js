@@ -469,6 +469,27 @@ function getDeviceAssignments() {
     return result;
 }
 
+function notifyStudentDeviceAllocated(userId, deviceId) {
+    const targetIO = studentIO || io;
+    if (!targetIO) {
+        console.warn(`[WS] 无法通知学生: WebSocket 未初始化`);
+        return false;
+    }
+    const studentSocketId = userIdToSocket.get(userId);
+    if (studentSocketId) {
+        targetIO.to(studentSocketId).emit('device_allocated', {
+            deviceId: deviceId,
+            userId: userId,
+            timestamp: new Date().toISOString()
+        });
+        console.log(`[WS] 已向学生 userId=${userId} 发送 device_allocated: deviceId=${deviceId}`);
+        return true;
+    } else {
+        console.warn(`[WS] 无法通知学生 userId=${userId}: 尚未建立 WS 连接`);
+        return false;
+    }
+}
+
 module.exports = setupSocket;
 module.exports.broadcastDeviceData = broadcastDeviceData;
 module.exports.broadcastDeviceStatus = broadcastDeviceStatus;
@@ -479,3 +500,4 @@ module.exports.getTeacherIO = getTeacherIO;
 module.exports.getStudentIO = getStudentIO;
 module.exports.setTCPServer = setTCPServer;
 module.exports.getDeviceAssignments = getDeviceAssignments;
+module.exports.notifyStudentDeviceAllocated = notifyStudentDeviceAllocated;

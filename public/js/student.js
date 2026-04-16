@@ -352,7 +352,7 @@ class StudentDashboard {
     }
 
     async loadExperiments() {
-        const token = localStorage.getItem('token');
+        const token = sessionStorage.getItem('token');
         if (!token) {
             console.warn('No token found, cannot load experiments');
             return;
@@ -635,7 +635,7 @@ class StudentDashboard {
             this.updateButtonStates();
             this.loadExperiments();
 
-            const token = localStorage.getItem('token');
+            const token = sessionStorage.getItem('token');
             if (token) {
                 this.socket.emit('authenticate', { token });
             }
@@ -663,16 +663,23 @@ class StudentDashboard {
             this.updateButtonStates();
         });
 
-        this.socket.on('device_assigned', (data) => {
-            console.log('Device assigned by teacher:', data);
-            this.boundDeviceId = data.deviceId;
-            this.updateConnectionStatus('device-bound');
-            this.updateButtonStates();
-
+        this.socket.on('device_allocated', (data) => {
+            console.log('[WS] 收到 device_allocated:', data);
             const statusEl = document.getElementById('wsStatus');
             if (statusEl) {
-                statusEl.textContent = `已分配设备: ${data.deviceId}`;
+                statusEl.textContent = `老师已分配设备: ${data.deviceId}`;
             }
+
+            if (this.boundDeviceId && this.boundDeviceId !== data.deviceId) {
+                this.socket.emit('unbind_device', { deviceId: this.boundDeviceId });
+                console.log(`[WS] 解绑旧设备: ${this.boundDeviceId}`);
+            }
+
+            this.boundDeviceId = data.deviceId;
+            this.socket.emit('bind_device', { deviceId: data.deviceId });
+            console.log(`[WS] 绑定分配设备: ${data.deviceId}`);
+
+            this.updateButtonStates();
         });
 
         this.socket.on('capture-started', (data) => {
@@ -812,7 +819,7 @@ class StudentDashboard {
         }
         if (!confirm(`确认提交波形数据？\n通道数：${this.recordBuffer.length}\n采样点数：${totalSamples}`)) return;
 
-        const token = localStorage.getItem('token');
+        const token = sessionStorage.getItem('token');
         const submitBtn = document.getElementById('submitWaveformBtn');
         submitBtn.disabled = true;
         submitBtn.textContent = '提交中...';

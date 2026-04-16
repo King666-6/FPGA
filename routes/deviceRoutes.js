@@ -203,7 +203,7 @@ router.get('/:deviceId', authenticate, async (req, res) => {
 router.post('/:deviceId/allocate', authenticate, authorize(['teacher', 'admin']), async (req, res) => {
     try {
         const { student_id, class_id, notes } = req.body;
-        
+
         await Device.allocateToStudent(
             req.params.deviceId,
             student_id,
@@ -211,7 +211,20 @@ router.post('/:deviceId/allocate', authenticate, authorize(['teacher', 'admin'])
             req.user.id,
             notes
         );
-        
+
+        const socketManager = require('../utils/socketManager');
+        socketManager.notifyStudentDeviceAllocated(student_id, req.params.deviceId);
+
+        const io = socketManager.getIO();
+        if (io) {
+            io.to('teachers').emit('allocation_updated', {
+                deviceId: req.params.deviceId,
+                studentId: student_id,
+                action: 'allocate',
+                timestamp: new Date().toISOString()
+            });
+        }
+
         res.json({
             success: true,
             message: '设备分配成功'
@@ -261,6 +274,18 @@ router.post('/:deviceId/command', authenticate, async (req, res) => {
 router.post('/:deviceId/deallocate', authenticate, authorize(['teacher', 'admin']), async (req, res) => {
     try {
         await Device.deallocateDevice(req.params.deviceId);
+
+        const socketManager = require('../utils/socketManager');
+        const io = socketManager.getIO();
+        if (io) {
+            io.to('teachers').emit('allocation_updated', {
+                deviceId: req.params.deviceId,
+                studentId: null,
+                action: 'deallocate',
+                timestamp: new Date().toISOString()
+            });
+        }
+
         res.json({ success: true, message: '设备分配已解除' });
     } catch (error) {
         console.error('解除设备分配错误:', error);

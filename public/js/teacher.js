@@ -289,7 +289,7 @@ class TeacherApp {
     }
 
     async checkAuth() {
-        const token = localStorage.getItem('token');
+        const token = sessionStorage.getItem('token');
         if (!token) {
             throw new Error('Unauthorized');
         }
@@ -325,7 +325,7 @@ class TeacherApp {
             this.updateConnectionStatus(true);
             
             // 认证
-            const token = localStorage.getItem('token');
+            const token = sessionStorage.getItem('token');
             this.socket.emit('authenticate', token);
         });
 
@@ -355,6 +355,12 @@ class TeacherApp {
                 console.log(`[WS] 设备分配结果: ${data.deviceId} -> ${data.userId}`);
                 this.loadDeviceAssignments();
             }
+        });
+
+        // 监听 allocation_updated 事件，刷新设备分配 UI
+        this.socket.on('allocation_updated', (data) => {
+            console.log(`[WS] 收到 allocation_updated: deviceId=${data.deviceId}, action=${data.action}`);
+            this.loadDeviceAssignments();
         });
     }
 
@@ -466,7 +472,7 @@ class TeacherApp {
 
         // 退出登录
         document.getElementById('logoutBtn')?.addEventListener('click', () => {
-            localStorage.removeItem('token');
+            sessionStorage.removeItem('token');
             window.location.href = 'login.html';
         });
 
@@ -482,6 +488,25 @@ class TeacherApp {
                 const historyInputs = document.querySelectorAll('#replayWaveformFile');
                 historyInputs.forEach(el => el.style.display =
                     this.currentWaveSource === 'history' ? 'inline-block' : 'none');
+
+                const deviceSelect = document.getElementById('waveformDeviceSelect');
+                const sourceControls = document.querySelector('.waveform-source-controls');
+                let monitorLabel = null;
+                if (sourceControls) {
+                    sourceControls.querySelectorAll('label').forEach(l => {
+                        if (l.textContent.includes('监控设备')) monitorLabel = l;
+                    });
+                }
+                const clearBtn = document.getElementById('clearWaveformBtn');
+                if (this.currentWaveSource === 'history') {
+                    if (deviceSelect) deviceSelect.style.display = 'none';
+                    if (monitorLabel) monitorLabel.style.display = 'none';
+                    if (clearBtn) clearBtn.style.display = 'none';
+                } else {
+                    if (deviceSelect) deviceSelect.style.display = '';
+                    if (monitorLabel) monitorLabel.style.display = '';
+                    if (clearBtn) clearBtn.style.display = '';
+                }
 
                 this.teacherWaveform.resetView();
                 this.teacherWaveform._lastPinMapping = null;
@@ -652,7 +677,7 @@ class TeacherApp {
     }
 
     getToken() {
-        return localStorage.getItem('token');
+        return sessionStorage.getItem('token');
     }
 
     async apiCall(endpoint, options = {}) {

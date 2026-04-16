@@ -3,8 +3,8 @@ const API_BASE_URL = `${window.location.protocol}//${window.location.host}/api`;
 
 // 检查登录状态
 function checkLogin() {
-    const token = localStorage.getItem('token');
-    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    const token = sessionStorage.getItem('token');
+    const user = JSON.parse(sessionStorage.getItem('user') || '{}');
     
     if (!token || !user.id) {
         window.location.href = 'login.html';
@@ -44,8 +44,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     }
                     
                     // 保存token和用户信息
-                    localStorage.setItem('token', data.token);
-                    localStorage.setItem('user', JSON.stringify(data.user));
+                    sessionStorage.setItem('token', data.token);
+                    sessionStorage.setItem('user', JSON.stringify(data.user));
                     
                     // 根据角色跳转到不同页面
                     if (data.user.role === 'student') {
@@ -119,8 +119,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const logoutBtn = document.getElementById('logoutBtn');
     if (logoutBtn) {
         logoutBtn.addEventListener('click', function() {
-            localStorage.removeItem('token');
-            localStorage.removeItem('user');
+            sessionStorage.removeItem('token');
+            sessionStorage.removeItem('user');
             window.location.href = 'login.html';
         });
     }
@@ -128,7 +128,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // 显示用户名
     const userNameElements = document.querySelectorAll('#userName');
     if (userNameElements.length > 0) {
-        const user = JSON.parse(localStorage.getItem('user') || '{}');
+        const user = JSON.parse(sessionStorage.getItem('user') || '{}');
         userNameElements.forEach(el => {
             el.textContent = user.real_name || user.username || '用户';
         });
@@ -158,7 +158,7 @@ function showMessage(message, type = 'info') {
 
 // 获取认证头部
 function getAuthHeaders() {
-    const token = localStorage.getItem('token');
+    const token = sessionStorage.getItem('token');
     return {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
@@ -176,8 +176,8 @@ async function apiRequest(endpoint, options = {}) {
     
     if (response.status === 401) {
         // 未授权，跳转到登录页
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
+        sessionStorage.removeItem('token');
+        sessionStorage.removeItem('user');
         window.location.href = 'login.html';
         throw new Error('未授权');
     }
