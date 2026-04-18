@@ -215,15 +215,17 @@ router.post('/:deviceId/allocate', authenticate, authorize(['teacher', 'admin'])
         const socketManager = require('../utils/socketManager');
         socketManager.notifyStudentDeviceAllocated(student_id, req.params.deviceId);
 
+        // 【修复】同时通知两个 IO 实例的 teachers 房间
+        const teacherIO = socketManager.getTeacherIO();
         const io = socketManager.getIO();
-        if (io) {
-            io.to('teachers').emit('allocation_updated', {
-                deviceId: req.params.deviceId,
-                studentId: student_id,
-                action: 'allocate',
-                timestamp: new Date().toISOString()
-            });
-        }
+        const notifyData = {
+            deviceId: req.params.deviceId,
+            studentId: student_id,
+            action: 'allocate',
+            timestamp: new Date().toISOString()
+        };
+        if (teacherIO) teacherIO.to('teachers').emit('allocation_updated', notifyData);
+        if (io && io !== teacherIO) io.to('teachers').emit('allocation_updated', notifyData);
 
         res.json({
             success: true,
@@ -276,15 +278,17 @@ router.post('/:deviceId/deallocate', authenticate, authorize(['teacher', 'admin'
         await Device.deallocateDevice(req.params.deviceId);
 
         const socketManager = require('../utils/socketManager');
+        // 【修复】同时通知两个 IO 实例的 teachers 房间
+        const teacherIO = socketManager.getTeacherIO();
         const io = socketManager.getIO();
-        if (io) {
-            io.to('teachers').emit('allocation_updated', {
-                deviceId: req.params.deviceId,
-                studentId: null,
-                action: 'deallocate',
-                timestamp: new Date().toISOString()
-            });
-        }
+        const notifyData = {
+            deviceId: req.params.deviceId,
+            studentId: null,
+            action: 'deallocate',
+            timestamp: new Date().toISOString()
+        };
+        if (teacherIO) teacherIO.to('teachers').emit('allocation_updated', notifyData);
+        if (io && io !== teacherIO) io.to('teachers').emit('allocation_updated', notifyData);
 
         res.json({ success: true, message: '设备分配已解除' });
     } catch (error) {

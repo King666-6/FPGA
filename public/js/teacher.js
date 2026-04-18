@@ -1,7 +1,6 @@
 // 📁 public/js/teacher.js - 教师端主入口
-const API_BASE = window.location.port === '3000'
-    ? 'http://localhost:3000/api'
-    : 'http://localhost:3000/api';
+// 修复Bug 2：动态获取API基础地址，而非硬编码localhost:3000
+const API_BASE = window.location.origin + '/api';
 
 // =====================================================
 // 波形可视化类（移植自 student.js）
@@ -314,9 +313,8 @@ class TeacherApp {
     }
 
     initSocket() {
-        const wsUrl = window.location.port === '3002' 
-            ? 'http://localhost:3002' 
-            : 'http://localhost:3000';
+        // 修复Bug 2：动态获取WebSocket连接地址，而非硬编码localhost:3000
+        const wsUrl = window.location.origin;
         
         this.socket = io(wsUrl);
         

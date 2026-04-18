@@ -10,7 +10,11 @@ const deviceOnlineStatus = new Map();
 const deviceToStudentSocket = new Map();
 const deviceRequestedPins = new Map();
 const deviceStudentAssignment = new Map();
-const userIdToSocket = new Map();
+// 分离教师和学生的用户ID到Socket映射，避免相互覆盖
+const teacherUserIdToSocket = new Map();  // 教师用户ID -> socket.id（教师端连接）
+const studentUserIdToSocket = new Map();  // 学生用户ID -> socket.id（学生端连接）
+// 待通知队列：学生离线时暂存设备分配通知，待其上线后立即发送
+const pendingNotifications = new Map();   // userId -> deviceId
 
 let tcpServerModule = null;
 
@@ -190,8 +194,37 @@ function setupSocket(server, serverType = 'default') {
                     });
                 } else if (decoded.role === 'student') {
                     socket.join('students');
-                    userIdToSocket.set(decoded.id, socket.id);
+                    // 【修复B】统一类型：用户ID转换为Number确保Map查询一致
+                    const studentIdNum = Number(decoded.id);
+                    studentUserIdToSocket.set(studentIdNum, socket.id);
                     console.log(`👨‍🎓 学生 ${decoded.username} 加入学生房间`);
+                    
+                    // 【修复A】学生认证成功后，直接使用socket.emit发送待通知和设备分配
+                    // 1. 检查待通知队列：如果该学生有暂存的设备分配通知，直接发送并清除
+                    const pendingDeviceId = pendingNotifications.get(studentIdNum);
+                    if (pendingDeviceId) {
+                        socket.emit('device_allocated', {
+                            deviceId: pendingDeviceId,
+                            userId: decoded.id,
+                            timestamp: new Date().toISOString()
+                        });
+                        pendingNotifications.delete(studentIdNum);
+                        console.log(`[WS] 已补发 pending 通知: userId=${decoded.id}, deviceId=${pendingDeviceId}`);
+                    }
+                    
+                    // 2. 检查设备分配表：如果该学生已被分配设备，主动推送分配通知
+                    // 【修复B】统一类型比较
+                    for (const [deviceId, assignedUserId] of deviceStudentAssignment) {
+                        if (Number(assignedUserId) === studentIdNum) {
+                            socket.emit('device_allocated', {
+                                deviceId: deviceId,
+                                userId: decoded.id,
+                                timestamp: new Date().toISOString()
+                            });
+                            console.log(`[WS] 已推送已有分配: userId=${decoded.id}, deviceId=${deviceId}`);
+                            break; // 每个学生目前只分配一个设备，找到第一个即可
+                        }
+                    }
                 }
                 
                 socket.emit('authenticated', {
@@ -265,15 +298,25 @@ function setupSocket(server, serverType = 'default') {
         socket.on('assign_device_to_student', (data) => {
             const { deviceId, userId } = data;
             if (userId) {
-                deviceStudentAssignment.set(deviceId, userId);
+                // 【修复B】统一类型：用户ID转换为Number确保Map操作一致
+                const userIdNum = Number(userId);
+                deviceStudentAssignment.set(deviceId, userIdNum);
                 console.log(`[WS] 教师分配设备 ${deviceId} -> 学生userId: ${userId}`);
 
-                const studentSocketId = userIdToSocket.get(userId);
+                const studentSocketId = studentUserIdToSocket.get(userIdNum);
                 if (studentSocketId && studentIO) {
-                    studentIO.to(studentSocketId).emit('device_assigned', { deviceId });
+                    // 【修复C】统一事件名称为device_allocated
+                    studentIO.to(studentSocketId).emit('device_allocated', { 
+                        deviceId: deviceId,
+                        userId: userId,
+                        timestamp: new Date().toISOString()
+                    });
                     console.log(`[WS] 已通知学生 userId=${userId} 设备已分配: ${deviceId}`);
                 } else {
                     console.warn(`[WARN] 学生 userId=${userId} 尚未建立 WS 连接`);
+                    // 修复Bug 1：如果学生不在线，将通知存入待通知队列
+                    pendingNotifications.set(userIdNum, deviceId);
+                    console.log(`[WS] 学生离线，暂存设备分配通知: userId=${userId}, deviceId=${deviceId}`);
                 }
             } else {
                 deviceStudentAssignment.delete(deviceId);
@@ -297,9 +340,10 @@ function setupSocket(server, serverType = 'default') {
                     console.log(`👨‍🏫 教师 ${socket.user.username} 已断开连接`);
                 }
 
-                // 如果是学生断开，清理 userIdToSocket
+                // 如果是学生断开，清理 studentUserIdToSocket
                 if (socket.userRole === 'student') {
-                    userIdToSocket.delete(socket.user.id);
+                    // 【修复B】统一类型：用户ID转换为Number确保Map操作一致
+                    studentUserIdToSocket.delete(Number(socket.user.id));
                 }
             }
             
@@ -410,7 +454,9 @@ function broadcastDeviceData(data) {
         const assignedUserId = deviceStudentAssignment.get(deviceId);
         let studentSocketId = null;
         if (assignedUserId) {
-            studentSocketId = userIdToSocket.get(assignedUserId);
+            // 修复Bug 1：只查询学生专用的socket映射
+            // 【修复B】统一类型：用户ID转换为Number确保Map查询一致
+            studentSocketId = studentUserIdToSocket.get(Number(assignedUserId));
         } else {
             studentSocketId = deviceToStudentSocket.get(deviceId);
         }
@@ -470,24 +516,28 @@ function getDeviceAssignments() {
 }
 
 function notifyStudentDeviceAllocated(userId, deviceId) {
-    const targetIO = studentIO || io;
-    if (!targetIO) {
-        console.warn(`[WS] 无法通知学生: WebSocket 未初始化`);
-        return false;
-    }
-    const studentSocketId = userIdToSocket.get(userId);
+    // 【修复B】统一类型：用户ID转换为Number确保Map查询一致
+    const userIdNum = Number(userId);
+    const studentSocketId = studentUserIdToSocket.get(userIdNum);
     if (studentSocketId) {
-        targetIO.to(studentSocketId).emit('device_allocated', {
-            deviceId: deviceId,
-            userId: userId,
-            timestamp: new Date().toISOString()
-        });
-        console.log(`[WS] 已向学生 userId=${userId} 发送 device_allocated: deviceId=${deviceId}`);
-        return true;
-    } else {
-        console.warn(`[WS] 无法通知学生 userId=${userId}: 尚未建立 WS 连接`);
-        return false;
+        // 【修复A】优先用 studentIO，因为学生一定连的是 3002 端口
+        const targetIO = studentIO || io;
+        if (targetIO) {
+            targetIO.to(studentSocketId).emit('device_allocated', {
+                deviceId: deviceId,
+                userId: userId,
+                timestamp: new Date().toISOString()
+            });
+            console.log(`[WS] 已通知学生 userId=${userId}: deviceId=${deviceId}`);
+            return true;
+        }
     }
+    // 学生离线，存入 pending
+    // 【修复B】统一类型
+    pendingNotifications.set(userIdNum, deviceId);
+    console.warn(`[WARN] 学生 userId=${userId} 尚未建立 WS 连接`);
+    console.log(`[WS] 学生离线，暂存设备分配通知: userId=${userId}, deviceId=${deviceId}`);
+    return false;
 }
 
 module.exports = setupSocket;
