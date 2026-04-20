@@ -10,11 +10,11 @@ const deviceOnlineStatus = new Map();
 const deviceToStudentSocket = new Map();
 const deviceRequestedPins = new Map();
 const deviceStudentAssignment = new Map();
-// 分离教师和学生的用户ID到Socket映射，避免相互覆盖
-const teacherUserIdToSocket = new Map();  // 教师用户ID -> socket.id（教师端连接）
-const studentUserIdToSocket = new Map();  // 学生用户ID -> socket.id（学生端连接）
+const teacherUserIdToSocket = new Map();  
+const studentUserIdToSocket = new Map();  
+
 // 待通知队列：学生离线时暂存设备分配通知，待其上线后立即发送
-const pendingNotifications = new Map();   // userId -> deviceId
+const pendingNotifications = new Map();   
 
 let tcpServerModule = null;
 
@@ -194,12 +194,12 @@ function setupSocket(server, serverType = 'default') {
                     });
                 } else if (decoded.role === 'student') {
                     socket.join('students');
-                    // 【修复B】统一类型：用户ID转换为Number确保Map查询一致
+                    // 统一类型：用户ID转换为Number确保Map查询一致
                     const studentIdNum = Number(decoded.id);
                     studentUserIdToSocket.set(studentIdNum, socket.id);
                     console.log(`👨‍🎓 学生 ${decoded.username} 加入学生房间`);
                     
-                    // 【修复A】学生认证成功后，直接使用socket.emit发送待通知和设备分配
+                    // 学生认证成功后，直接使用socket.emit发送待通知和设备分配
                     // 1. 检查待通知队列：如果该学生有暂存的设备分配通知，直接发送并清除
                     const pendingDeviceId = pendingNotifications.get(studentIdNum);
                     if (pendingDeviceId) {
@@ -213,7 +213,7 @@ function setupSocket(server, serverType = 'default') {
                     }
                     
                     // 2. 检查设备分配表：如果该学生已被分配设备，主动推送分配通知
-                    // 【修复B】统一类型比较
+                    // 统一类型比较
                     for (const [deviceId, assignedUserId] of deviceStudentAssignment) {
                         if (Number(assignedUserId) === studentIdNum) {
                             socket.emit('device_allocated', {

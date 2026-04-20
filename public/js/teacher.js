@@ -1,5 +1,4 @@
-// 📁 public/js/teacher.js - 教师端主入口
-// 修复Bug 2：动态获取API基础地址，而非硬编码localhost:3000
+// 动态获取API基础地址，而非硬编码localhost:3000
 const API_BASE = window.location.origin + '/api';
 
 // =====================================================

@@ -12,7 +12,7 @@ const socketDeviceMap = new Map();
 
 const FRAME_START = Buffer.from([0xFF, 0xFE]);
 const DEFAULT_CLOCK_SELECT = 0x0001;
-const DEFAULT_DEVICE_NUMBER = 0xCCCCCCCC;
+const DEFAULT_DEVICE_NUMBER = 0x00000000;
 const RESERVED_BYTES = Buffer.from([0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA]);
 
 const CLOCK_SELECT_MAP = {
@@ -126,6 +126,7 @@ class TCPServer {
         this.clientParsers = new Map();
         this.deviceSocketMap = new Map();
         this.deviceContexts = new Map();
+        this.deviceNumberMap = new Map(); // 存储设备号（注册包中的4字节设备号）
     }
 
     start() {
@@ -146,8 +147,13 @@ class TCPServer {
                 const pinMappingIds = deviceContext?.pinMapping || [];
 
                 const pinStates = data.pinStates;
+                // 修复：从硬件返回的所有引脚状态中提取请求的引脚状态
+                const filteredWaveforms = pinMappingIds.map(pinId => {
+                    const state = pinStates[pinId] !== undefined ? pinStates[pinId] : 0;
+                    return [state];
+                });
                 const pinMapping = pinMappingIds.map(id => getPinName(id));
-                const waveforms = pinStates.map(state => [state]);
+                const waveforms = filteredWaveforms;
 
                 const parsedData = parseWaveformData(waveforms, pinMappingIds);
 
@@ -208,14 +214,15 @@ class TCPServer {
             chunk[0] === 0xFF && chunk[1] === 0xFE &&
             chunk[2] === 0xCC && chunk[3] === 0xCC) {
 
-            const deviceNumHex = chunk.slice(4, 8)
-                .toString('hex')
-                .toUpperCase();
+            const deviceNumBuffer = chunk.slice(4, 8);
+            const deviceNumHex = deviceNumBuffer.toString('hex').toUpperCase();
             const deviceId = `FPGA_${deviceNumHex}`;
+            const deviceNumberInt = deviceNumBuffer.readUInt32BE(0);
 
             socket.deviceId = deviceId;
             parser.deviceId = deviceId;
             this.deviceSocketMap.set(deviceId, socket);
+            this.deviceNumberMap.set(deviceId, deviceNumberInt);
 
             DataRecord._getOrCreateDevice(deviceId).catch(err => {
                 console.error(`[TCP] 设备注册数据库写入失败: ${err.message}`);
@@ -294,12 +301,15 @@ class TCPServer {
                     console.warn(`[WARN] Invalid pin names: ${invalidPins.join(', ')}`);
                 }
 
-                const packetCount = validIds.length || 2;
+                const deviceNumber = this.deviceNumberMap.get(deviceId) || DEFAULT_DEVICE_NUMBER;
+                const maxPinIndex = validIds.length > 0 ? Math.max(...validIds) : 0;
+                const packetCount = Math.max(maxPinIndex + 1, 2);
                 const clockSource = command.clockSource || '50Hz';
                 const clockSelect = CLOCK_SELECT_MAP[clockSource] || DEFAULT_CLOCK_SELECT;
 
                 const cmdBuffer = buildCommandBuffer({
                     clockSelect: clockSelect,
+                    deviceNumber: deviceNumber,
                     packetCount: packetCount,
                     requestedPins: validIds
                 });
@@ -328,7 +338,9 @@ class TCPServer {
                 return true;
 
             } else if (command.action === 'stop_capture') {
+                const deviceNumber = this.deviceNumberMap.get(deviceId) || DEFAULT_DEVICE_NUMBER;
                 const cmdBuffer = buildCommandBuffer({
+                    deviceNumber: deviceNumber,
                     packetCount: 0
                 });
 
@@ -340,7 +352,9 @@ class TCPServer {
                 return true;
 
             } else if (command.action === 'diagnose') {
+                const deviceNumber = this.deviceNumberMap.get(deviceId) || DEFAULT_DEVICE_NUMBER;
                 const cmdBuffer = buildCommandBuffer({
+                    deviceNumber: deviceNumber,
                     packetCount: 32
                 });
 

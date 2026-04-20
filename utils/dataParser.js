@@ -73,11 +73,11 @@ class DataParser extends EventEmitter {
             return;
         }
 
-        const packetCount = chunk.readUInt16BE(4);
+        const packetCount = chunk.readUInt16BE(4); // 大包顺序序号（非子帧数量）
         const deviceNumber = chunk.slice(6, 10);
 
         if (this.expectedTotalPackets !== null && packetCount !== this.expectedTotalPackets) {
-            console.warn(`⚠️ [${this.deviceId}] 大包计数(${packetCount})与期望(${this.expectedTotalPackets})不一致`);
+            console.warn(`⚠️ [${this.deviceId}] 大包顺序序号(${packetCount})与期望(${this.expectedTotalPackets})不一致`);
         }
 
         const payloadStart = LARGE_HEADER_SIZE;

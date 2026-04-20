@@ -66,7 +66,7 @@ function startCapture() {
         const largeHeader = Buffer.alloc(10);
         LARGE_FRAME_HEADER.copy(largeHeader, 0);
         largeHeader.writeUInt16BE(totalLength, 2);
-        largeHeader.writeUInt16BE(requestedPins.length, 4);
+        largeHeader.writeUInt16BE((loopCounter % 0xFFFF) + 1, 4); // 大包顺序序号（1-based，0x0001到0xFFFF循环）
         largeHeader.writeUInt32BE(0x000000CC, 6);
 
         const frames = [];
@@ -121,7 +121,7 @@ function sendLargePacket(seq) {
     const largeHeader = Buffer.alloc(10);
     LARGE_FRAME_HEADER.copy(largeHeader, 0);
     largeHeader.writeUInt16BE(totalLength, 2);
-    largeHeader.writeUInt16BE(packetCount, 4);
+    largeHeader.writeUInt16BE((seq % 0xFFFF) + 1, 4); // 大包顺序序号（1-based，0x0001到0xFFFF循环）
     largeHeader.writeUInt32BE(0x000000CC, 6);
 
     const subFrames = [];
