@@ -108,6 +108,10 @@ function stopCapture() {
         clearInterval(captureInterval);
         captureInterval = null;
     }
+    if (captureTimer) {
+        clearInterval(captureTimer);
+        captureTimer = null;
+    }
     console.log('⏹️ 已停止采集');
 }
 
@@ -157,6 +161,23 @@ function sendLargePacket(seq) {
 
 let captureSeq = 0;
 let captureTimer = null;
+let heartbeatTimer = null;
+
+function startHeartbeat() {
+    if (heartbeatTimer) return;
+    heartbeatTimer = setInterval(() => {
+        client.write(Buffer.from([0xFF, 0xCC, 0xFF, 0xCC]));
+    }, 3000);
+    console.log('[FPGA1] Heartbeat started (every 3s)');
+}
+
+function stopHeartbeat() {
+    if (heartbeatTimer) {
+        clearInterval(heartbeatTimer);
+        heartbeatTimer = null;
+        console.log('[FPGA1] Heartbeat stopped');
+    }
+}
 
 function startCaptureV2() {
     if (isCapturing || requestedPins.length === 0) return;
@@ -169,12 +190,15 @@ function startCaptureV2() {
     }, 200);
 }
 
+
 client.connect(TCP_PORT, TCP_HOST, () => {
     console.log(`✅ 已连接到服务器 ${TCP_HOST}:${TCP_PORT}`);
 
     const regPacket = Buffer.from([0xFF, 0xFE, 0xCC, 0xCC, 0xFF, 0x11, 0x22, 0x33]);
     client.write(regPacket);
     console.log('📝 已发送设备注册信息，等待网页端下发采集指令...');
+
+    startHeartbeat();
 });
 
 client.on('data', (data) => {
@@ -238,8 +262,12 @@ function parseCommand(buffer) {
     return { packetCount };
 }
 
-client.on('error', (err) => console.error('❌ 连接错误:', err.message));
+client.on('error', (err) => {
+    console.error('❌ 连接错误:', err.message);
+    stopHeartbeat();
+});
 client.on('close', () => {
     console.log('🔌 连接已断开');
     stopCapture();
+    stopHeartbeat();
 });

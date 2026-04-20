@@ -26,6 +26,7 @@ const client = new net.Socket();
 let requestedPins = [];
 let isCapturing = false;
 let captureInterval = null;
+let heartbeatTimer = null;
 
 let counter = 0;
 let ledPattern = 0;
@@ -210,6 +211,22 @@ function stopCapture() {
     console.log('[FPGA2] Capture stopped');
 }
 
+function startHeartbeat() {
+    if (heartbeatTimer) return;
+    heartbeatTimer = setInterval(() => {
+        client.write(Buffer.from([0xFF, 0xCC, 0xFF, 0xCC]));
+    }, 3000);
+    console.log('[FPGA2] Heartbeat started (every 3s)');
+}
+
+function stopHeartbeat() {
+    if (heartbeatTimer) {
+        clearInterval(heartbeatTimer);
+        heartbeatTimer = null;
+        console.log('[FPGA2] Heartbeat stopped');
+    }
+}
+
 let dataBuffer = Buffer.alloc(0);
 
 function parseCommand(buffer) {
@@ -226,6 +243,8 @@ client.connect(TCP_PORT, TCP_HOST, () => {
     const regPacket = Buffer.from([0xFF, 0xFE, 0xCC, 0xCC, 0x00, 0x11, 0x22, 0x33]);
     client.write(regPacket);
     console.log('[FPGA2] Registration packet sent, waiting for capture command...');
+
+    startHeartbeat();
 });
 
 client.on('data', (data) => {
@@ -272,10 +291,14 @@ client.on('data', (data) => {
     }
 });
 
-client.on('error', (err) => console.error('[FPGA2] Connection error:', err.message));
+client.on('error', (err) => {
+    console.error('[FPGA2] Connection error:', err.message);
+    stopHeartbeat();
+});
 client.on('close', () => {
     console.log('[FPGA2] Connection closed');
     stopCapture();
+    stopHeartbeat();
 });
 
 console.log('[FPGA2] FPGA2 simulator starting...');

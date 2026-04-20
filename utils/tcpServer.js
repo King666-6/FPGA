@@ -30,10 +30,11 @@ function buildCommandBuffer(options = {}) {
     const {
         clockSelect = DEFAULT_CLOCK_SELECT,
         deviceNumber = DEFAULT_DEVICE_NUMBER,
-        packetCount = 2,
+        packetCount,
         requestedPins = []
     } = options;
 
+    const pinCount = packetCount !== undefined ? packetCount : (requestedPins.length > 0 ? requestedPins.length : 54);
     const buffer = Buffer.alloc(24);
     let offset = 0;
 
@@ -49,7 +50,7 @@ function buildCommandBuffer(options = {}) {
     buffer.writeUInt16BE(0xFF00, offset);
     offset += 2;
 
-    buffer.writeUInt16BE(packetCount, offset);
+    buffer.writeUInt16BE(pinCount, offset);
     offset += 2;
 
     RESERVED_BYTES.copy(buffer, offset);
@@ -126,7 +127,9 @@ class TCPServer {
         this.clientParsers = new Map();
         this.deviceSocketMap = new Map();
         this.deviceContexts = new Map();
-        this.deviceNumberMap = new Map(); // 存储设备号（注册包中的4字节设备号）
+        this.deviceNumberMap = new Map();
+        this.heartbeatMap = new Map();
+        this.HEARTBEAT_TIMEOUT = 10000;
     }
 
     start() {
@@ -135,11 +138,23 @@ class TCPServer {
             console.log(`[TCP] Client connected: ${clientId}`);
 
             socket.deviceId = `FPGA_AUTO_${globalDeviceIdCounter++}`;
+            socket.lastHeartbeat = Date.now();
+
+            const heartbeatTimer = setInterval(() => {
+                const elapsed = Date.now() - socket.lastHeartbeat;
+                if (elapsed > this.HEARTBEAT_TIMEOUT && !socket.destroyed) {
+                    console.warn(`[TCP] [${socket.deviceId}] 心跳超时 (${elapsed}ms)，强制断开连接`);
+                    socket.destroy();
+                }
+            }, 5000);
+
+            this.heartbeatMap.set(socket, heartbeatTimer);
 
             const parser = new DataParser(socket.deviceId);
             this.clientParsers.set(socket, parser);
 
             parser.on('snapshot-ready', async (data) => {
+                socket.lastHeartbeat = Date.now();
                 console.log(`[TCP] [${data.deviceId}] Snapshot received`);
 
                 const deviceId = socket.deviceId || data.deviceId;
@@ -178,6 +193,12 @@ class TCPServer {
             });
 
             socket.on('close', () => {
+                const heartbeatTimer = this.heartbeatMap.get(socket);
+                if (heartbeatTimer) {
+                    clearInterval(heartbeatTimer);
+                    this.heartbeatMap.delete(socket);
+                }
+
                 console.log(`[TCP] Client disconnected: ${clientId}`);
 
                 if (socket.deviceId) {
@@ -210,6 +231,8 @@ class TCPServer {
     }
 
     handleIncomingData(socket, chunk, parser, clientId) {
+        socket.lastHeartbeat = Date.now();
+
         if (chunk.length === 8 &&
             chunk[0] === 0xFF && chunk[1] === 0xFE &&
             chunk[2] === 0xCC && chunk[3] === 0xCC) {
@@ -310,7 +333,6 @@ class TCPServer {
                 const cmdBuffer = buildCommandBuffer({
                     clockSelect: clockSelect,
                     deviceNumber: deviceNumber,
-                    packetCount: packetCount,
                     requestedPins: validIds
                 });
 

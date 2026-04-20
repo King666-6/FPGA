@@ -73,7 +73,7 @@ class DataParser extends EventEmitter {
             return;
         }
 
-        const packetCount = chunk.readUInt16BE(4); // 大包顺序序号（非子帧数量）
+        const packetCount = chunk.readUInt16BE(4); // 大包计数：标识该大包是第几个上传的数据包（顺序序号），非子帧数量
         const deviceNumber = chunk.slice(6, 10);
 
         if (this.expectedTotalPackets !== null && packetCount !== this.expectedTotalPackets) {

@@ -1,6 +1,7 @@
 // 📁 utils/scheduler.js - 定时任务管理器
 const cron = require('node-cron');
 const DataRecord = require('../models/DataRecord');
+const { getTCPServer } = require('../utils/tcpServer');
 
 class Scheduler {
     constructor() {
@@ -10,6 +11,7 @@ class Scheduler {
     // 初始化所有定时任务
     init() {
         this.setupDataCleanup();
+        this.setupHeartbeatCheck();
         console.log('✅ 所有定时任务已初始化');
     }
     
@@ -32,6 +34,42 @@ class Scheduler {
         
         this.jobs.push(job);
         console.log('✅ 数据清理任务已设置，将在每天凌晨2点执行');
+    }
+    
+    // 设置心跳检测任务
+    setupHeartbeatCheck() {
+        // 每30秒检查一次所有连接的心跳活跃度
+        const job = cron.schedule('*/30 * * * * *', () => {
+            const tcpServer = getTCPServer();
+            if (!tcpServer || !tcpServer.heartbeatMap) return;
+            
+            const now = Date.now();
+            const timeout = tcpServer.HEARTBEAT_TIMEOUT || 10000;
+            let activeCount = 0;
+            let staleCount = 0;
+            
+            tcpServer.heartbeatMap.forEach((timer, socket) => {
+                const elapsed = now - (socket.lastHeartbeat || 0);
+                
+                if (elapsed > timeout && !socket.destroyed) {
+                    staleCount++;
+                    console.warn(`[HEARTBEAT] 设备 ${socket.deviceId} 心跳超时 ${elapsed}ms，强制断开`);
+                    socket.destroy();
+                } else if (!socket.destroyed) {
+                    activeCount++;
+                }
+            });
+            
+            if (activeCount > 0 || staleCount > 0) {
+                console.log(`[HEARTBEAT] 活跃连接: ${activeCount}, 超时断开: ${staleCount}`);
+            }
+        }, {
+            scheduled: true,
+            timezone: 'Asia/Shanghai'
+        });
+        
+        this.jobs.push(job);
+        console.log('✅ 心跳检测任务已设置，每30秒检查一次');
     }
     
     // 添加自定义定时任务
