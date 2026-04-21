@@ -65,6 +65,22 @@ function buildCommandBuffer(options = {}) {
     return buffer;
 }
 
+async function getExperimentClockSource(experimentId) {
+    if (!experimentId || experimentId <= 0) {
+        return null;
+    }
+    try {
+        const [rows] = await pool().execute('SELECT sample_clock FROM experiments WHERE id = ?', [experimentId]);
+        if (rows.length > 0 && rows[0].sample_clock) {
+            return rows[0].sample_clock;
+        }
+        return null;
+    } catch (error) {
+        console.error(`[ERROR] Failed to query experiment clock source for id ${experimentId}:`, error.message);
+        return null;
+    }
+}
+
 function parseWaveformData(waveforms, pinMapping) {
     if (!waveforms || !pinMapping || pinMapping.length === 0) {
         return {
@@ -301,7 +317,7 @@ class TCPServer {
         }
     }
 
-    sendCommand(deviceId, command) {
+    async sendCommand(deviceId, command) {
         const socket = this.deviceSocketMap.get(deviceId);
 
         if (!socket || socket.destroyed) {
@@ -327,7 +343,23 @@ class TCPServer {
                 const deviceNumber = this.deviceNumberMap.get(deviceId) || DEFAULT_DEVICE_NUMBER;
                 const maxPinIndex = validIds.length > 0 ? Math.max(...validIds) : 0;
                 const packetCount = Math.max(maxPinIndex + 1, 2);
-                const clockSource = command.clockSource || '50Hz';
+                
+                // 确定时钟源：优先使用实验配置，否则使用命令中的配置
+                let clockSource = command.clockSource || '50Hz';
+                let clockSourceFrom = 'command';
+                if (command.experimentId > 0) {
+                    const experimentClock = await getExperimentClockSource(command.experimentId);
+                    if (experimentClock && CLOCK_SELECT_MAP[experimentClock]) {
+                        clockSource = experimentClock;
+                        clockSourceFrom = 'experiment';
+                    } else if (experimentClock) {
+                        console.warn(`[WARN] Experiment ${command.experimentId} has unsupported clock source: ${experimentClock}, using ${clockSource}`);
+                        clockSourceFrom = 'default (unsupported)';
+                    } else {
+                        console.warn(`[WARN] Experiment ${command.experimentId} not found or clock not configured, using ${clockSource}`);
+                        clockSourceFrom = 'default (experiment not found)';
+                    }
+                }
                 const clockSelect = CLOCK_SELECT_MAP[clockSource] || DEFAULT_CLOCK_SELECT;
 
                 const cmdBuffer = buildCommandBuffer({
@@ -355,6 +387,8 @@ class TCPServer {
                 console.log(`  - Pins: ${validIds.length} (${validIds.join(', ')})`);
                 console.log(`  - Trigger: 0xFF00`);
                 console.log(`  - Packet count: ${packetCount}`);
+                console.log(`  - Clock source: ${clockSource} (from ${clockSourceFrom})`);
+                console.log(`  - Clock select: 0x${clockSelect.toString(16).padStart(4, '0')}`);
                 console.log(`  - Buffer: ${cmdBuffer.toString('hex').toUpperCase()}`);
 
                 return true;

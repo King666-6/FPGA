@@ -259,7 +259,7 @@ router.post('/:deviceId/command', authenticate, async (req, res) => {
         if (!tcpServer) {
             return res.status(503).json({ success: false, error: 'TCP服务器未启动' });
         }
-        const sent = tcpServer.sendCommand(deviceId, command, data);
+        const sent = await tcpServer.sendCommand(deviceId, command);
         
         if (sent) {
             res.json({ success: true, message: '命令发送成功' });

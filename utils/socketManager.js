@@ -92,7 +92,7 @@ function setupSocket(server, serverType = 'default') {
             deviceRequestedPins.set(deviceId, requestedPins);
 
             if (tcpServerModule) {
-                tcpServerModule.sendCommand(deviceId, {
+                await tcpServerModule.sendCommand(deviceId, {
                     action: 'start_capture',
                     requestedPins: requestedPins,
                     experimentId: experimentId,
@@ -135,7 +135,7 @@ function setupSocket(server, serverType = 'default') {
             deviceRequestedPins.delete(deviceId);
 
             if (tcpServerModule) {
-                tcpServerModule.sendCommand(deviceId, {
+                await tcpServerModule.sendCommand(deviceId, {
                     action: 'stop_capture'
                 });
             }
